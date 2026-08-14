@@ -48,8 +48,13 @@ export function apply(ctx) {
       const chunk = event.data.chunk
       log(event, {
         chunk: chunk.type,
-        ...typeof chunk.delta === 'string' ? { delta: preview(chunk.delta) } : {},
+        ...typeof chunk.text === 'string' ? { text: preview(chunk.text) } : {},
+        ...typeof chunk.argumentsDelta === 'string'
+          ? { tool: chunk.name, callId: chunk.id, argumentsDelta: preview(chunk.argumentsDelta) }
+          : {},
+        ...chunk.type === 'block-end' ? { block: chunk.block } : {},
         ...chunk.type === 'usage' ? { usage: chunk.usage } : {},
+        ...chunk.type === 'finish' ? { reason: chunk.reason } : {},
       })
       return
     }

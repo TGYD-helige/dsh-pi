@@ -73,7 +73,7 @@ jobs:
           test -f "$PI_CODING_AGENT_DIR/node_modules/${{ matrix.specifier }}/package.json"
           dsh --profile headless --patch .github/dsh-smoke/model.patch.yml --dump-config > "$RUNNER_TEMP/dsh-config.yml"
           grep -F "${{ matrix.specifier }}" "$RUNNER_TEMP/dsh-config.yml"
-          grep -F 'provider: dsh-integration' "$RUNNER_TEMP/dsh-config.yml"
+          grep -F 'provider: deepseek-official' "$RUNNER_TEMP/dsh-config.yml"
           grep -F 'model: deepseek-v4-flash' "$RUNNER_TEMP/dsh-config.yml"
           export DSH_SMOKE_EXPECTED_TOOL="${{ matrix.tool }}"
           export DSH_SMOKE_EXPECTED_RESULT="${{ matrix.expected-result }}"

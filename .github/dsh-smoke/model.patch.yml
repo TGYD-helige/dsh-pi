@@ -1,22 +1,15 @@
 - id: agent-default-model
   config:
-    provider: dsh-integration
+    provider: deepseek-official
     model: deepseek-v4-flash
-- id: llm-pi-ai
+- id: llm-deepseek
   config:
-    providers:
-      dsh-integration:
-        displayName: DSH Integration
-        apiKeyEnv: DSH_INTEGRATION_API_KEY
-        api: openai-completions
-        baseURL: !!js process.env.DSH_INTEGRATION_BASE_URL
-        reasoning: high
-        compat:
-          thinkingFormat: deepseek
-        models:
-          - id: deepseek-v4-flash
-            name: DeepSeek V4 Flash
-            contextWindow: 1000000
-            maxTokens: 384000
-            reasoningEfforts:
-              high: high
+    apiKeyEnv: DSH_INTEGRATION_API_KEY
+    baseURL: !!js process.env.DSH_INTEGRATION_BASE_URL
+    thinking: enabled
+    reasoningEffort: high
+    maxTokens: 384000
+    models:
+      - id: deepseek-v4-flash
+        name: DeepSeek V4 Flash
+        contextWindow: 1000000
