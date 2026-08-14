@@ -1,0 +1,8 @@
+- id: dsh-pi
+  config:
+    extensions:
+      - '@amaster.ai/pi-image-gen'
+    projectTrusted: false
+    allowLocalPaths: false
+    strict: true
+    flags: {}

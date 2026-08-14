@@ -1,0 +1,42 @@
+name: DSH smoke
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  pi-image-gen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DSH_HOME: ${{ runner.temp }}/dsh-home
+      PI_CODING_AGENT_DIR: ${{ runner.temp }}/dsh-home/profiles/ci
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+
+      - name: Install dsh-pi and pi-image-gen
+        run: dsh plugin --profile ci add . @amaster.ai/pi-image-gen@0.1.8
+
+      - name: Configure and verify the profile
+        run: |
+          cp .github/dsh-smoke/cordis.patch.yml "$PI_CODING_AGENT_DIR/cordis.patch.yml"
+          cp .github/dsh-smoke/settings.json "$PI_CODING_AGENT_DIR/settings.json"
+          test -f "$PI_CODING_AGENT_DIR/node_modules/@amaster.ai/pi-image-gen/package.json"
+          (cd "$PI_CODING_AGENT_DIR" && node --input-type=module --eval "import { loadPiSettings } from '@amaster.ai/pi-shared/settings'; const settings = loadPiSettings('pi-image-gen'); if (settings.defaultModel !== 'nano-banana') throw new Error('pi-image-gen settings were not loaded')")
+          dsh --profile ci --dump-config | tee "$RUNNER_TEMP/dsh-config.yml"
+          grep -F '@amaster.ai/pi-image-gen' "$RUNNER_TEMP/dsh-config.yml"

@@ -43,6 +43,8 @@ dsh --profile demo --dump-config
 
 The selected Pi packages must be installed in the same DSH profile so bare package specifiers resolve from that profile. DSH may warn that they declare no `dsh.bundle`; that is expected because they are plain dependencies loaded by `dsh-pi`, not independent DSH layers. Install any other package named in `extensions` the same way.
 
+### Choose Pi extensions
+
 Then override the bundle row in the profile's `cordis.patch.yml`. DSH replaces a row's complete `config`, so keep every field:
 
 ```yaml
@@ -73,6 +75,37 @@ For local fixture packages, enable the explicit code-execution boundary:
 ```
 
 `allowLocalPaths` is off by default because Pi extensions are trusted Node.js code, not sandboxed plugins. `projectTrusted` is a separate switch: it controls whether extensions may consume project-local Pi settings and policies. The host loads only entries resolved from `extensions`; it never auto-discovers `<cwd>/.pi/extensions`.
+
+Reload the profile after changing `extensions`, then run `dsh --profile demo --dump-config` to verify the effective list.
+
+### Configure Pi extensions
+
+Keep Pi settings beside the DSH profile configuration and point `PI_CODING_AGENT_DIR` at that profile directory. Use Pi's established `settings.json` filename rather than a separate `pi-settings.json` compatibility format:
+
+```text
+$DSH_HOME/profiles/demo/
+├── cordis.patch.yml   # selects Pi extensions
+└── settings.json      # configures those Pi extensions
+```
+
+For `pi-image-gen`, the minimum configuration selects a model and keeps the API key in the environment:
+
+```json
+{
+  "pi-image-gen": {
+    "defaultModel": "nano-banana"
+  }
+}
+```
+
+```sh
+export DSH_HOME="$HOME/.dsh"
+export PI_CODING_AGENT_DIR="$DSH_HOME/profiles/demo"
+export GEMINI_API_KEY="..."
+dsh --profile demo
+```
+
+The same settings file can configure multiple selected Pi extensions under their own top-level keys. Project-local `<cwd>/.pi/settings.json` remains available only when `projectTrusted` is enabled.
 
 ## Pi API to DSH compatibility
 
