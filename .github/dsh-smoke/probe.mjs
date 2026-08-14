@@ -28,18 +28,13 @@ export function apply(ctx) {
   assert(expectedTool && expectedResult && witness, 'DSH smoke probe environment is incomplete')
 
   let restricted = false
-  let mounted = false
   ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
     if (!restricted) {
+      assert(agent.ctx.tools.get(expectedTool, agent), `DSH did not mount tool: ${expectedTool}`)
       agent.ctx.tools.restrict({ allow: [] })
       restricted = true
-      console.error('[dsh-pi-e2e] hid global tools for the test agent')
-    }
-    const decision = await next()
-    assert(agent.ctx.tools.get(expectedTool, agent), `DSH did not mount tool: ${expectedTool}`)
-    if (!mounted) {
-      mounted = true
-      console.error(`[dsh-pi-e2e] mounted agent tool: ${expectedTool}`)
+      console.error(`[dsh-pi-e2e] mounted agent tool and hid global tools: ${expectedTool}`)
     }
     return decision
   })
