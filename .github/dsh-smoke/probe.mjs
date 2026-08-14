@@ -38,6 +38,14 @@ export async function apply(ctx) {
   }
 
   try {
+    await ctx.waterfall('agent/pre-step', {
+      agent: handle.agent,
+      messages: [],
+      turn: 0,
+      step: 0,
+      signal: new AbortController().signal,
+    }, async () => ({ kind: 'enter', messages: [] }))
+
     while (ctx.tools.get(expectedTool, handle.agent) === undefined) {
       if (Date.now() >= deadline) throw new Error(`DSH did not mount tool: ${expectedTool}`)
       await delay(25)
