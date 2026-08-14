@@ -1,0 +1,8 @@
+- insert:
+    - id: dsh-pi
+      name: '@amaster.ai/dsh-pi'
+      config:
+        extensions: []
+        projectTrusted: false
+        allowLocalPaths: false
+        strict: true
