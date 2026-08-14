@@ -1,0 +1,13 @@
+{
+  "pi-image-gen": {
+    "defaultModel": "seedream",
+    "customProviders": {
+      "ci-gateway": {
+        "api": "openai",
+        "baseUrl": "${DSH_INTEGRATION_BASE_URL}",
+        "apiKey": "${DSH_INTEGRATION_API_KEY}",
+        "models": ["seedream"]
+      }
+    }
+  }
+}
