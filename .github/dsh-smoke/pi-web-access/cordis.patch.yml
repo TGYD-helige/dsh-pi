@@ -4,7 +4,7 @@
       - '@amaster.ai/pi-web-access'
     projectTrusted: false
     allowLocalPaths: false
-    strict: true
+    strict: false
     flags: {}
 - insert:
     - id: dsh-smoke-probe

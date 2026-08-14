@@ -71,5 +71,6 @@ jobs:
           grep -F "${{ matrix.specifier }}" "$RUNNER_TEMP/dsh-config.yml"
           export DSH_SMOKE_EXPECTED_TOOL="${{ matrix.tool }}"
           export DSH_SMOKE_WITNESS="$RUNNER_TEMP/${{ matrix.extension }}.loaded"
-          dsh --profile ci
+          set -o pipefail
+          dsh --profile ci 2>&1 | tee "$RUNNER_TEMP/${{ matrix.extension }}-dsh.log"
           test "$(cat "$DSH_SMOKE_WITNESS")" = "$DSH_SMOKE_EXPECTED_TOOL"

@@ -21,6 +21,7 @@ export async function apply(ctx) {
     }
     await delay(25)
   }
+  console.error('[dsh-pi-smoke] dsh-pi lifecycle registered')
 
   let handle
   while (handle === undefined) {
@@ -36,6 +37,7 @@ export async function apply(ctx) {
       await delay(25)
     }
   }
+  console.error(`[dsh-pi-smoke] DSH agent created: ${String(handle.agent.id)}`)
 
   try {
     await ctx.waterfall('agent/pre-step', {
@@ -45,11 +47,13 @@ export async function apply(ctx) {
       step: 0,
       signal: new AbortController().signal,
     }, async () => ({ kind: 'enter', messages: [] }))
+    console.error('[dsh-pi-smoke] agent/pre-step completed')
 
     while (ctx.tools.get(expectedTool, handle.agent) === undefined) {
       if (Date.now() >= deadline) throw new Error(`DSH did not mount tool: ${expectedTool}`)
       await delay(25)
     }
+    console.error(`[dsh-pi-smoke] agent tool mounted: ${expectedTool}`)
     await writeFile(witness, expectedTool)
   } finally {
     await handle.dispose()
