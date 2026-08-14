@@ -1,0 +1,38 @@
+name: Promote npm dist-tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Published dsh-pi-host version
+        required: true
+        type: string
+      tag:
+        description: npm dist-tag to update
+        required: true
+        type: choice
+        options:
+          - latest
+          - next
+
+permissions:
+  contents: read
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Promote published version
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PACKAGE_VERSION: ${{ inputs.version }}
+          DIST_TAG: ${{ inputs.tag }}
+        run: |
+          npm view "dsh-pi-host@$PACKAGE_VERSION" version
+          npm dist-tag add "dsh-pi-host@$PACKAGE_VERSION" "$DIST_TAG"
