@@ -6,3 +6,6 @@
     allowLocalPaths: false
     strict: true
     flags: {}
+- insert:
+    - id: dsh-smoke-probe
+      name: ./dsh-smoke-probe.mjs

@@ -1,0 +1,11 @@
+- id: dsh-pi
+  config:
+    extensions:
+      - '@amaster.ai/pi-web-access'
+    projectTrusted: false
+    allowLocalPaths: false
+    strict: false
+    flags: {}
+- insert:
+    - id: dsh-smoke-probe
+      name: ./dsh-smoke-probe.mjs

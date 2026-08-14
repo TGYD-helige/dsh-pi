@@ -2,6 +2,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { Buffer } from 'node:buffer'
 import type { Agent, PreStepDecision, SessionStartSource } from '@deepseek-ai/dsh-agent'
+import type { AttachmentStore } from '@deepseek-ai/dsh-attachment'
 import type { CommandInvocation } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, UserMessage } from '@deepseek-ai/dsh-llm'
@@ -74,7 +75,7 @@ function messageText(messages: readonly UserMessage[]): string {
 
 async function messageImages(
   messages: readonly UserMessage[],
-  agent: Agent,
+  attachments: AttachmentStore,
   signal?: AbortSignal,
 ): Promise<Extract<PiContent, { type: 'image' }>[]> {
   const refs = messages.flatMap(message => message.content)
@@ -82,7 +83,7 @@ async function messageImages(
     .map(block => block.attachment)
   return Promise.all(refs.map(async ref => {
     try {
-      const stored = await agent.ctx.attachments.readImage(ref, signal)
+      const stored = await attachments.readImage(ref, signal)
       return { type: 'image' as const, data: Buffer.from(stored.data).toString('base64'), mimeType: stored.ref.mediaType }
     } catch (error) {
       if (signal?.aborted === true
@@ -157,13 +158,13 @@ async function endPiTurn(
 
 async function piMessageContent(
   content: string | PiContent[],
-  agent: Agent,
+  attachments: AttachmentStore,
 ): Promise<ContentBlock[]> {
   if (typeof content === 'string') return [{ type: 'text', text: content }]
   return piContentToDsh(
     content,
-    input => agent.ctx.attachments.saveImage(input),
-    agent.ctx.attachments.imageLimits,
+    input => attachments.saveImage(input),
+    attachments.imageLimits,
   )
 }
 
@@ -209,7 +210,7 @@ async function mountAgent(ctx: Context, agent: Agent, config: Config, reason: Se
     deliveries = deliveries.then(async () => {
       if (disposing) return
       try {
-        const blocks = await piMessageContent(content, agent)
+        const blocks = await piMessageContent(content, ctx.attachments)
         if (!disposing) deliver(blocks)
       } catch {
         ctx.logger.warn(`${name}: Pi message delivery failed`)
@@ -256,6 +257,11 @@ async function mountAgent(ctx: Context, agent: Agent, config: Config, reason: Se
       },
     },
   })
+  let commandContext: Context | undefined
+  const commandFiber = agent.ctx.inject(['commands'], scoped => { commandContext = scoped })
+  await commandFiber
+  if (commandContext === undefined) throw new Error('Failed to create the Pi command scope')
+  const scopedCommands = commandContext.commands
 
   const toolEffects = new Map<string, { definition: object; dispose: () => void }>()
   const skippedToolDefinitions = new Map<string, object>()
@@ -297,8 +303,8 @@ async function mountAgent(ctx: Context, agent: Agent, config: Config, reason: Se
               await mounted?.drainDeliveries()
             }
           },
-          saveImage: input => agent.ctx.attachments.saveImage(input),
-          imageLimits: agent.ctx.attachments.imageLimits,
+          saveImage: input => ctx.attachments.saveImage(input),
+          imageLimits: ctx.attachments.imageLimits,
         })
       } catch (error) {
         if (config.strict ?? true) throw error
@@ -347,7 +353,7 @@ async function mountAgent(ctx: Context, agent: Agent, config: Config, reason: Se
     for (const [commandName, command] of currentCommands) {
       if (commandEffects.has(commandName)) continue
       try {
-        const dispose = agent.ctx.commands.register({
+        const dispose = scopedCommands.register({
           name: commandName,
           description: command.description?.trim() || `Run Pi command /${commandName}`,
           input: { hint: '<args>' },
@@ -396,6 +402,7 @@ async function mountAgent(ctx: Context, agent: Agent, config: Config, reason: Se
           if (disposed.some(result => result.status === 'rejected')) {
             ctx.logger.warn(`${name}: one or more DSH registrations failed to dispose`)
           }
+          await commandFiber.dispose()
         })()
       }
       return disposal
@@ -420,6 +427,7 @@ export function apply(ctx: Context, config: Config): void {
   const runtimes = new WeakMap<Agent, Promise<MountedRuntime>>()
   const sessions = new WeakMap<object, { agent: Agent; pending: Promise<MountedRuntime> }>()
   const live = new Set<Promise<MountedRuntime>>()
+  const ready = new WeakSet<Agent>()
 
   const ensure = (agent: Agent, reason: SessionStartSource = 'startup'): Promise<MountedRuntime> => {
     const existing = runtimes.get(agent)
@@ -427,7 +435,10 @@ export function apply(ctx: Context, config: Config): void {
       if (reason !== 'startup') void existing.then(item => item.runtime.start(sourceReason(reason)))
       return existing
     }
-    const pending = mountAgent(ctx, agent, config, reason)
+    const pending = mountAgent(ctx, agent, config, reason).then((mounted) => {
+      ready.add(agent)
+      return mounted
+    })
     runtimes.set(agent, pending)
     sessions.set(agent.session, { agent, pending })
     live.add(pending)
@@ -435,6 +446,12 @@ export function apply(ctx: Context, config: Config): void {
     return pending
   }
 
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const agent = context.agent
+    if (agent === undefined || ready.has(agent)) return next()
+    await ensure(agent)
+    return ctx.systemPrompt.assemble(context)
+  })
   ctx.on('agent/session-start', ({ agent, source }) => { void ensure(agent, source) })
   ctx.on('agent/pre-step', async ({ agent, messages, turn, step, signal }, next): Promise<PreStepDecision> => {
     const mounted = await ensure(agent)
@@ -445,7 +462,7 @@ export function apply(ctx: Context, config: Config): void {
     let entered = downstream.messages
     if (mounted.lastTurn !== turn) {
       let prompt = messageText(messages)
-      let images = await messageImages(messages, agent, signal)
+      let images = await messageImages(messages, ctx.attachments, signal)
       const input = await mounted.runtime.emit({
         type: 'input', text: prompt, source: 'rpc', ...(images.length === 0 ? {} : { images }),
       }, signal) as
@@ -460,7 +477,7 @@ export function apply(ctx: Context, config: Config): void {
         const transformed = createUserMessage({
           content: await piMessageContent(images.length === 0
             ? input.text
-            : [{ type: 'text', text: input.text }, ...images], agent),
+            : [{ type: 'text', text: input.text }, ...images], ctx.attachments),
           source: { kind: 'plugin', plugin: name },
         })
         const claimedIds = new Set(messages.map(message => message.id))
@@ -554,4 +571,4 @@ export function apply(ctx: Context, config: Config): void {
   }, `${name}: drain Pi extension runtimes`)
 }
 
-export default apply
+export default Object.assign(apply, { Config, inject })

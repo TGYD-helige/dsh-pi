@@ -1,0 +1,14 @@
+{
+  "pi-image-gen": {
+    "defaultModel": "doubao-seedream-5-0-lite-260128",
+    "outputDir": "${RUNNER_TEMP}/pi-images",
+    "customProviders": {
+      "ci-gateway": {
+        "api": "openai",
+        "baseUrl": "${DSH_INTEGRATION_BASE_URL}",
+        "apiKey": "${DSH_INTEGRATION_API_KEY}",
+        "models": ["doubao-seedream-5-0-lite-260128"]
+      }
+    }
+  }
+}

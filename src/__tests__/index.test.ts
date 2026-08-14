@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { apply } from '../index.js'
+import plugin, { apply, Config, inject } from '../index.js'
 
 const fixture = (name: string) => new URL(`./fixtures/${name}.ts`, import.meta.url).pathname
 
@@ -15,8 +15,37 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
   const sessionMessages: unknown[] = []
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
   const inbox = { hasPending: false }
+  const attachments = {
+    imageLimits: {
+      maxImageBytes: 1024,
+      maxImagesPerMessage: 4,
+      maxMessageImageBytes: 4096,
+      maxImagePixels: 1_048_576,
+      mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    },
+    saveImage: vi.fn(async (input: { data: Uint8Array; mediaType: string }) => ({
+      attachmentId: 'saved-image', mediaType: input.mediaType,
+      bytes: input.data.byteLength, width: 1, height: 1,
+    })),
+    readImage: vi.fn(async (ref: unknown) => ({ ref, data: Uint8Array.from([1, 2, 3]) })),
+  }
+  const systemPrompt = {
+    assemble: async (context: unknown) => {
+      const assembly = {
+        sections: [], contexts: [], variables: {},
+        tools: [...toolDefinitions.values()].map(({ name, description, parameters }) => ({
+          name, description, parameters,
+        })),
+      }
+      const handler = handlers.get('system-prompt/assemble')
+      const result = handler === undefined
+        ? assembly
+        : handler(assembly as never, context as never, (() => Promise.resolve(assembly)) as never)
+      return await result as typeof assembly
+    },
+  }
   const ctx = {
-    logger,
+    logger, attachments, systemPrompt,
     on: (event: string, handler: (...args: never[]) => unknown) => { handlers.set(event, handler) },
     effect: (factory: () => () => Promise<void>) => { cleanup = factory() },
   }
@@ -26,6 +55,10 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
     send: vi.fn(), followup: vi.fn(() => { inbox.hasPending = true }), steer: vi.fn(), inject: vi.fn(),
     session: { header: { cwd: '/workspace' }, deriveMessages: () => sessionMessages },
     ctx: {
+      inject: (_services: string[], callback: (ctx: unknown) => void) => {
+        callback(agent.ctx)
+        return Object.assign(Promise.resolve(), { dispose: vi.fn(async () => {}) })
+      },
       tools: { register: (tool: { name: string }) => {
         if (throwingToolRegistrations.has(tool.name)) throw new Error('registration secret')
         tools.add(tool.name)
@@ -41,13 +74,6 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
         return () => { commands.delete(command.name) }
       } },
       systemPrompt: { section: () => () => {} },
-      attachments: {
-        saveImage: vi.fn(async (input: { data: Uint8Array; mediaType: string }) => ({
-          attachmentId: 'saved-image', mediaType: input.mediaType,
-          bytes: input.data.byteLength, width: 1, height: 1,
-        })),
-        readImage: vi.fn(async (ref: unknown) => ({ ref, data: Uint8Array.from([1, 2, 3]) })),
-      },
     },
   }
   apply(ctx as never, {
@@ -64,12 +90,28 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
     )
   }
   return {
-    agent, commands, enterStep, handlers, logger, sessionMessages, tools, toolDefinitions,
+    agent, attachments, commands, enterStep, handlers, logger, sessionMessages, systemPrompt, tools, toolDefinitions,
     throwingToolDisposals, throwingToolRegistrations, cleanup: () => cleanup?.(),
   }
 }
 
 describe('dsh-pi plugin', () => {
+  it('keeps DSH dependency and config metadata on the default export', () => {
+    expect(plugin).toBe(apply)
+    expect(plugin.Config).toBe(Config)
+    expect(plugin.inject).toBe(inject)
+  })
+
+  it('refreshes the first DSH assembly after async Pi tools mount', async () => {
+    const harness = createHarness(fixture('full'))
+
+    harness.handlers.get('agent/session-start')?.({ agent: harness.agent, source: 'startup' } as never)
+    const assembly = await harness.systemPrompt.assemble({ agent: harness.agent, scope: harness.agent })
+
+    expect(assembly.tools.map(tool => tool.name)).toContain('echo')
+    await harness.cleanup()
+  })
+
   it('does not wake an idle agent for non-triggering Pi messages', async () => {
     const harness = createHarness(fixture('delivery'))
     await harness.enterStep()
@@ -85,7 +127,7 @@ describe('dsh-pi plugin', () => {
   it('drains session-start Pi message delivery before the first DSH step', async () => {
     const harness = createHarness(fixture('delivery-image'))
     let release: (() => void) | undefined
-    harness.agent.ctx.attachments.saveImage.mockImplementation(async (input) => {
+    harness.attachments.saveImage.mockImplementation(async (input) => {
       await new Promise<void>(resolve => { release = resolve })
       return {
         attachmentId: 'delayed-image', mediaType: input.mediaType,
@@ -95,7 +137,7 @@ describe('dsh-pi plugin', () => {
 
     let settled = false
     const step = Promise.resolve(harness.enterStep()).then(() => { settled = true })
-    await vi.waitFor(() => expect(harness.agent.ctx.attachments.saveImage).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(harness.attachments.saveImage).toHaveBeenCalledOnce())
 
     expect(settled).toBe(false)
     expect(harness.agent.inject).not.toHaveBeenCalled()
@@ -107,7 +149,7 @@ describe('dsh-pi plugin', () => {
 
   it('does not expose attachment persistence errors from Pi message delivery', async () => {
     const harness = createHarness(fixture('delivery-image'))
-    harness.agent.ctx.attachments.saveImage.mockRejectedValue(new Error('secret persistence path'))
+    harness.attachments.saveImage.mockRejectedValue(new Error('secret persistence path'))
 
     await harness.enterStep()
 
@@ -182,7 +224,7 @@ describe('dsh-pi plugin', () => {
 
   it('sanitizes DSH attachment read failures at the Pi input boundary', async () => {
     const harness = createHarness(fixture('input-transform'))
-    harness.agent.ctx.attachments.readImage.mockRejectedValue(new Error('secret attachment path'))
+    harness.attachments.readImage.mockRejectedValue(new Error('secret attachment path'))
     const claimed = createUserMessage({
       content: [{
         type: 'image',
@@ -199,7 +241,7 @@ describe('dsh-pi plugin', () => {
 
   it('sanitizes DSH attachment persistence failures from Pi input transforms', async () => {
     const harness = createHarness(fixture('input-transform'))
-    harness.agent.ctx.attachments.saveImage.mockRejectedValue(new Error('/private/token=secret'))
+    harness.attachments.saveImage.mockRejectedValue(new Error('/private/token=secret'))
     const claimed = createUserMessage({
       content: [
         { type: 'text', text: 'image prompt' },
@@ -364,7 +406,7 @@ describe('dsh-pi plugin', () => {
     state.__piTerminalDeliveryEvents = []
     const harness = createHarness(fixture('terminal-delivery'))
     let release: (() => void) | undefined
-    harness.agent.ctx.attachments.saveImage.mockImplementation(async (input) => {
+    harness.attachments.saveImage.mockImplementation(async (input) => {
       await new Promise<void>(resolve => { release = resolve })
       return {
         attachmentId: 'terminal-image', mediaType: input.mediaType,
@@ -376,7 +418,7 @@ describe('dsh-pi plugin', () => {
     const terminal = Promise.resolve(harness.handlers.get('session/event')?.(harness.agent.session as never, {
       type: 'turn/end', data: { turn: 1, reason: { kind: 'completed' } },
     } as never))
-    await vi.waitFor(() => expect(harness.agent.ctx.attachments.saveImage).toHaveBeenCalledOnce())
+    await vi.waitFor(() => expect(harness.attachments.saveImage).toHaveBeenCalledOnce())
 
     expect(state.__piTerminalDeliveryEvents).toEqual(['agent_end'])
     release?.()

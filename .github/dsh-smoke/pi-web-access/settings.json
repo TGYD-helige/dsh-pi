@@ -1,0 +1,12 @@
+{
+  "pi-web-access": {
+    "fetch": {
+      "provider": "firecrawl"
+    },
+    "providers": {
+      "firecrawl": {
+        "apiKey": "${FIRECRAWL_API_KEY}"
+      }
+    }
+  }
+}
