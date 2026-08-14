@@ -1,6 +1,6 @@
 {
   "pi-image-gen": {
-    "defaultModel": "qwen-image-2.0",
+    "defaultModel": "doubao-seedream-5-0-lite-260128",
     "outputDir": "${RUNNER_TEMP}/pi-images",
     "customProviders": {
       "ci-gateway": {
