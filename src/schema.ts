@@ -1,4 +1,3 @@
-import { assertObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 import type { JsonSchemaNode, ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
 const annotations = new Set(['description', 'title', 'default', 'examples'])
@@ -65,6 +64,6 @@ function convert(value: unknown, path: string): JsonSchemaNode {
 /** Project a TypeBox schema onto the strict JSON Schema subset accepted by DSH tools. */
 export function toDshParameters(schema: unknown): ObjectJsonSchema {
   const converted = convert(schema, '$')
-  assertObjectJsonSchema(converted)
-  return converted
+  if (converted.type !== 'object') throw new TypeError('$.type must be "object"')
+  return converted as ObjectJsonSchema
 }

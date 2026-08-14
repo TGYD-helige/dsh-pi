@@ -207,4 +207,4 @@ See [the detailed compatibility matrix](./docs/compatibility.md) and the executa
 
 ## Publishing
 
-Git installs need pnpm permission to run this package's `prepare` build. The npm package ships prebuilt `lib/` and needs no install-time build permission. Maintainers publish by pushing a tag that exactly matches the package version, for example `v0.1.0-rc.1`; the release workflow validates, builds, tests, and publishes `dsh-pi-host` with the repository's `NPM_TOKEN` secret. Prereleases use npm's `next` tag and stable versions use `latest`.
+Git installs need pnpm permission to run this package's `prepare` build. The npm package ships prebuilt `lib/` and needs no install-time build permission. Maintainers publish by pushing a tag that exactly matches the package version, for example `v0.1.0-rc.2`; the release workflow validates, builds, tests, and publishes `dsh-pi-host` with the repository's `NPM_TOKEN` secret. Prereleases use npm's `next` tag and stable versions use `latest`.
