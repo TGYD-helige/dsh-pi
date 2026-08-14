@@ -47,6 +47,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
+      - name: Pack the published bundle shape
+        run: |
+          pnpm pack --pack-destination "$RUNNER_TEMP"
+          version=$(node -p "require('./package.json').version")
+          echo "DSH_PI_TARBALL=$RUNNER_TEMP/dsh-pi-host-$version.tgz" >> "$GITHUB_ENV"
       - run: npm install --global @deepseek-ai/dsh@0.1.0-rc.6
 
       - name: Configure DSH profile paths
@@ -63,7 +68,7 @@ jobs:
           fi
 
       - name: Install dsh-pi and ${{ matrix.extension }}
-        run: dsh plugin --profile headless add . "${{ matrix.package }}"
+        run: dsh plugin --profile headless add "$DSH_PI_TARBALL" "${{ matrix.package }}"
 
       - name: Configure and verify the profile
         run: |
