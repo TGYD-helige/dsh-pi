@@ -27,8 +27,6 @@ jobs:
             specifier: '@amaster.ai/pi-web-access'
             tool: web_fetch
     env:
-      DSH_HOME: ${{ runner.temp }}/dsh-home-${{ matrix.extension }}
-      PI_CODING_AGENT_DIR: ${{ runner.temp }}/dsh-home-${{ matrix.extension }}/profiles/ci
       DSH_INTEGRATION_API_KEY: ${{ secrets.DSH_INTEGRATION_API_KEY }}
       DSH_INTEGRATION_BASE_URL: ${{ secrets.DSH_INTEGRATION_BASE_URL }}
       FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
@@ -46,6 +44,11 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm check
       - run: npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+
+      - name: Configure DSH profile paths
+        run: |
+          echo "DSH_HOME=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}" >> "$GITHUB_ENV"
+          echo "PI_CODING_AGENT_DIR=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}/profiles/ci" >> "$GITHUB_ENV"
 
       - name: Validate integration secrets
         run: |
