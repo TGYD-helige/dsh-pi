@@ -1,4 +1,4 @@
-name: DSH smoke
+name: DSH integration
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   extension:
-    name: DSH smoke (${{ matrix.extension }})
+    name: DSH E2E (${{ matrix.extension }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -22,10 +22,14 @@ jobs:
             package: '@amaster.ai/pi-image-gen@0.1.8'
             specifier: '@amaster.ai/pi-image-gen'
             tool: image_generate
+            expected-result: 'Generated 1 image(s)'
+            prompt: "Use image_generate exactly once with prompt 'a solid red square on a plain white background'. Then report the generated file path."
           - extension: pi-web-access
             package: '@amaster.ai/pi-web-access@0.1.8'
             specifier: '@amaster.ai/pi-web-access'
             tool: web_fetch
+            expected-result: 'Example Domain'
+            prompt: "Use web_fetch exactly once on https://example.com with prompt 'Return the page title'. Then report the title."
     env:
       DSH_INTEGRATION_API_KEY: ${{ secrets.DSH_INTEGRATION_API_KEY }}
       DSH_INTEGRATION_BASE_URL: ${{ secrets.DSH_INTEGRATION_BASE_URL }}
@@ -48,7 +52,7 @@ jobs:
       - name: Configure DSH profile paths
         run: |
           echo "DSH_HOME=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}" >> "$GITHUB_ENV"
-          echo "PI_CODING_AGENT_DIR=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}/profiles/ci" >> "$GITHUB_ENV"
+          echo "PI_CODING_AGENT_DIR=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}/profiles/headless" >> "$GITHUB_ENV"
 
       - name: Validate integration secrets
         run: |
@@ -59,7 +63,7 @@ jobs:
           fi
 
       - name: Install dsh-pi and ${{ matrix.extension }}
-        run: dsh plugin --profile ci add . "${{ matrix.package }}"
+        run: dsh plugin --profile headless add . "${{ matrix.package }}"
 
       - name: Configure and verify the profile
         run: |
@@ -67,10 +71,14 @@ jobs:
           cp ".github/dsh-smoke/${{ matrix.extension }}/settings.json" "$PI_CODING_AGENT_DIR/settings.json"
           cp .github/dsh-smoke/probe.mjs "$PI_CODING_AGENT_DIR/dsh-smoke-probe.mjs"
           test -f "$PI_CODING_AGENT_DIR/node_modules/${{ matrix.specifier }}/package.json"
-          dsh --profile ci --dump-config | tee "$RUNNER_TEMP/dsh-config.yml"
+          dsh --profile headless --patch .github/dsh-smoke/model.patch.yml --dump-config > "$RUNNER_TEMP/dsh-config.yml"
           grep -F "${{ matrix.specifier }}" "$RUNNER_TEMP/dsh-config.yml"
+          grep -F 'provider: dsh-integration' "$RUNNER_TEMP/dsh-config.yml"
+          grep -F 'model: deepseek-v4-flash' "$RUNNER_TEMP/dsh-config.yml"
           export DSH_SMOKE_EXPECTED_TOOL="${{ matrix.tool }}"
+          export DSH_SMOKE_EXPECTED_RESULT="${{ matrix.expected-result }}"
           export DSH_SMOKE_WITNESS="$RUNNER_TEMP/${{ matrix.extension }}.loaded"
           set -o pipefail
-          dsh --profile ci 2>&1 | tee "$RUNNER_TEMP/${{ matrix.extension }}-dsh.log"
+          dsh --profile headless --patch .github/dsh-smoke/model.patch.yml "${{ matrix.prompt }}" 2>&1 \
+            | tee "$RUNNER_TEMP/${{ matrix.extension }}-dsh.log"
           test "$(cat "$DSH_SMOKE_WITNESS")" = "$DSH_SMOKE_EXPECTED_TOOL"

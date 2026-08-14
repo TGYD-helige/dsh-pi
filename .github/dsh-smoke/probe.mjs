@@ -1,63 +1,73 @@
 import assert from 'node:assert/strict'
-import { randomUUID } from 'node:crypto'
-import { writeFile } from 'node:fs/promises'
-import { setTimeout as delay } from 'node:timers/promises'
+import { writeFileSync } from 'node:fs'
 
 export const name = 'dsh-pi-smoke-probe'
-export const inject = ['agents', 'loader', 'tools']
 
-export async function apply(ctx) {
+const calls = new Map()
+
+function textOf(blocks = []) {
+  return blocks.flatMap(block => {
+    if (block.type === 'text') return [block.text]
+    if (block.type === 'tool-result') return [textOf(block.content)]
+    return []
+  }).join('\n')
+}
+
+function preview(text, limit = 2_000) {
+  return text.length <= limit ? text : `${text.slice(0, limit)}\n... [truncated by CI probe]`
+}
+
+function log(event, data = {}) {
+  console.error(`[dsh-pi-e2e] ${JSON.stringify({ seq: event.seq, type: event.type, ...data })}`)
+}
+
+export function apply(ctx) {
   const expectedTool = process.env.DSH_SMOKE_EXPECTED_TOOL
+  const expectedResult = process.env.DSH_SMOKE_EXPECTED_RESULT
   const witness = process.env.DSH_SMOKE_WITNESS
-  assert(expectedTool && witness, 'DSH smoke probe environment is incomplete')
+  assert(expectedTool && expectedResult && witness, 'DSH smoke probe environment is incomplete')
 
-  const deadline = Date.now() + 10_000
-  let lifecycleHooks
-  while (!(lifecycleHooks = ctx.events._hooks['agent/session-start'] ?? [])
-    .some(hook => ctx.loader.locate(hook.ctx.fiber)?.endsWith(':dsh-pi'))) {
-    if (Date.now() >= deadline) {
-      const owners = lifecycleHooks.map(hook => ctx.loader.locate(hook.ctx.fiber) ?? 'unknown').join(', ')
-      throw new Error(`dsh-pi did not register its agent lifecycle hook (owners: ${owners})`)
+  let restricted = false
+  ctx.on('agent/pre-step', async ({ agent }, next) => {
+    const decision = await next()
+    if (!restricted) {
+      assert(agent.ctx.tools.get(expectedTool, agent), `DSH did not mount tool: ${expectedTool}`)
+      agent.ctx.tools.restrict({ allow: [] })
+      restricted = true
+      console.error(`[dsh-pi-e2e] mounted agent tool and hid global tools: ${expectedTool}`)
     }
-    await delay(25)
-  }
-  console.error('[dsh-pi-smoke] dsh-pi lifecycle registered')
+    return decision
+  })
 
-  let handle
-  while (handle === undefined) {
-    try {
-      handle = await ctx.agents.create({
-        sessionId: randomUUID(),
-        meta: { cwd: process.cwd() },
-      })
-    } catch (error) {
-      if (Date.now() >= deadline || error?.message !== 'no agent factory registered (load an agent-loop plugin)') {
-        throw error
+  ctx.on('session/event', (_session, event) => {
+    if (event.type === 'turn/start' || event.type === 'step/start' || event.type === 'step/end') {
+      log(event, event.data)
+      return
+    }
+    if (event.type === 'assistant/message') {
+      log(event, { text: preview(textOf(event.data.message.content)) })
+      return
+    }
+    if (event.type === 'tool/call') {
+      const callId = String(event.data.callId)
+      calls.set(callId, event.data.name)
+      log(event, { tool: event.data.name, callId, arguments: preview(event.data.arguments) })
+      return
+    }
+    if (event.type === 'tool/result') {
+      const callId = String(event.data.message.source.callId)
+      const tool = calls.get(callId) ?? 'unknown'
+      const result = event.data.message.content.find(block => block.type === 'tool-result')
+      const text = textOf(result?.content)
+      const isError = result?.isError === true
+      log(event, { tool, callId, isError, text: preview(text) })
+      if (tool === expectedTool && !isError && text.includes(expectedResult)) {
+        writeFileSync(witness, expectedTool)
       }
-      await delay(25)
+      return
     }
-  }
-  console.error(`[dsh-pi-smoke] DSH agent created: ${String(handle.agent.id)}`)
-
-  try {
-    await ctx.waterfall('agent/pre-step', {
-      agent: handle.agent,
-      messages: [],
-      turn: 0,
-      step: 0,
-      signal: new AbortController().signal,
-    }, async () => ({ kind: 'enter', messages: [] }))
-    console.error('[dsh-pi-smoke] agent/pre-step completed')
-
-    while (ctx.tools.get(expectedTool, handle.agent) === undefined) {
-      if (Date.now() >= deadline) throw new Error(`DSH did not mount tool: ${expectedTool}`)
-      await delay(25)
+    if (event.type === 'turn/end') {
+      log(event, { reason: event.data.reason })
     }
-    console.error(`[dsh-pi-smoke] agent tool mounted: ${expectedTool}`)
-    await writeFile(witness, expectedTool)
-  } finally {
-    await handle.dispose()
-  }
-
-  void ctx.root.fiber.dispose()
+  })
 }
