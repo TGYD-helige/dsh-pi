@@ -44,6 +44,15 @@ export function apply(ctx) {
       log(event, event.data)
       return
     }
+    if (event.type === 'assistant/chunk') {
+      const chunk = event.data.chunk
+      log(event, {
+        chunk: chunk.type,
+        ...typeof chunk.delta === 'string' ? { delta: preview(chunk.delta) } : {},
+        ...chunk.type === 'usage' ? { usage: chunk.usage } : {},
+      })
+      return
+    }
     if (event.type === 'assistant/message') {
       log(event, { text: preview(textOf(event.data.message.content)) })
       return
