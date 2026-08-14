@@ -427,6 +427,7 @@ export function apply(ctx: Context, config: Config): void {
   const runtimes = new WeakMap<Agent, Promise<MountedRuntime>>()
   const sessions = new WeakMap<object, { agent: Agent; pending: Promise<MountedRuntime> }>()
   const live = new Set<Promise<MountedRuntime>>()
+  const ready = new WeakSet<Agent>()
 
   const ensure = (agent: Agent, reason: SessionStartSource = 'startup'): Promise<MountedRuntime> => {
     const existing = runtimes.get(agent)
@@ -434,7 +435,10 @@ export function apply(ctx: Context, config: Config): void {
       if (reason !== 'startup') void existing.then(item => item.runtime.start(sourceReason(reason)))
       return existing
     }
-    const pending = mountAgent(ctx, agent, config, reason)
+    const pending = mountAgent(ctx, agent, config, reason).then((mounted) => {
+      ready.add(agent)
+      return mounted
+    })
     runtimes.set(agent, pending)
     sessions.set(agent.session, { agent, pending })
     live.add(pending)
@@ -442,6 +446,12 @@ export function apply(ctx: Context, config: Config): void {
     return pending
   }
 
+  ctx.on('system-prompt/assemble', async (_assembly, context, next) => {
+    const agent = context.agent
+    if (agent === undefined || ready.has(agent)) return next()
+    await ensure(agent)
+    return ctx.systemPrompt.assemble(context)
+  })
   ctx.on('agent/session-start', ({ agent, source }) => { void ensure(agent, source) })
   ctx.on('agent/pre-step', async ({ agent, messages, turn, step, signal }, next): Promise<PreStepDecision> => {
     const mounted = await ensure(agent)

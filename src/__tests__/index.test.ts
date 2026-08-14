@@ -29,8 +29,23 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
     })),
     readImage: vi.fn(async (ref: unknown) => ({ ref, data: Uint8Array.from([1, 2, 3]) })),
   }
+  const systemPrompt = {
+    assemble: async (context: unknown) => {
+      const assembly = {
+        sections: [], contexts: [], variables: {},
+        tools: [...toolDefinitions.values()].map(({ name, description, parameters }) => ({
+          name, description, parameters,
+        })),
+      }
+      const handler = handlers.get('system-prompt/assemble')
+      const result = handler === undefined
+        ? assembly
+        : handler(assembly as never, context as never, (() => Promise.resolve(assembly)) as never)
+      return await result as typeof assembly
+    },
+  }
   const ctx = {
-    logger, attachments,
+    logger, attachments, systemPrompt,
     on: (event: string, handler: (...args: never[]) => unknown) => { handlers.set(event, handler) },
     effect: (factory: () => () => Promise<void>) => { cleanup = factory() },
   }
@@ -75,7 +90,7 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
     )
   }
   return {
-    agent, attachments, commands, enterStep, handlers, logger, sessionMessages, tools, toolDefinitions,
+    agent, attachments, commands, enterStep, handlers, logger, sessionMessages, systemPrompt, tools, toolDefinitions,
     throwingToolDisposals, throwingToolRegistrations, cleanup: () => cleanup?.(),
   }
 }
@@ -85,6 +100,16 @@ describe('dsh-pi plugin', () => {
     expect(plugin).toBe(apply)
     expect(plugin.Config).toBe(Config)
     expect(plugin.inject).toBe(inject)
+  })
+
+  it('refreshes the first DSH assembly after async Pi tools mount', async () => {
+    const harness = createHarness(fixture('full'))
+
+    harness.handlers.get('agent/session-start')?.({ agent: harness.agent, source: 'startup' } as never)
+    const assembly = await harness.systemPrompt.assemble({ agent: harness.agent, scope: harness.agent })
+
+    expect(assembly.tools.map(tool => tool.name)).toContain('echo')
+    await harness.cleanup()
   })
 
   it('does not wake an idle agent for non-triggering Pi messages', async () => {
