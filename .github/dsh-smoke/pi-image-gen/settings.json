@@ -1,12 +1,12 @@
 {
   "pi-image-gen": {
-    "defaultModel": "seedream",
+    "defaultModel": "qwen-image-2.0",
+    "outputDir": "${RUNNER_TEMP}/pi-images",
     "customProviders": {
       "ci-gateway": {
         "api": "openai",
         "baseUrl": "${DSH_INTEGRATION_BASE_URL}",
-        "apiKey": "${DSH_INTEGRATION_API_KEY}",
-        "models": ["seedream"]
+        "apiKey": "${DSH_INTEGRATION_API_KEY}"
       }
     }
   }

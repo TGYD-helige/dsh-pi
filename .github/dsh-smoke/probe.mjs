@@ -28,13 +28,18 @@ export function apply(ctx) {
   assert(expectedTool && expectedResult && witness, 'DSH smoke probe environment is incomplete')
 
   let restricted = false
+  let mounted = false
   ctx.on('agent/pre-step', async ({ agent }, next) => {
-    const decision = await next()
     if (!restricted) {
-      assert(agent.ctx.tools.get(expectedTool, agent), `DSH did not mount tool: ${expectedTool}`)
       agent.ctx.tools.restrict({ allow: [] })
       restricted = true
-      console.error(`[dsh-pi-e2e] mounted agent tool and hid global tools: ${expectedTool}`)
+      console.error('[dsh-pi-e2e] hid global tools for the test agent')
+    }
+    const decision = await next()
+    assert(agent.ctx.tools.get(expectedTool, agent), `DSH did not mount tool: ${expectedTool}`)
+    if (!mounted) {
+      mounted = true
+      console.error(`[dsh-pi-e2e] mounted agent tool: ${expectedTool}`)
     }
     return decision
   })
@@ -46,12 +51,9 @@ export function apply(ctx) {
     }
     if (event.type === 'assistant/chunk') {
       const chunk = event.data.chunk
+      if (chunk.type === 'reasoning-delta' || chunk.type === 'text-delta' || chunk.type === 'tool-call-delta') return
       log(event, {
         chunk: chunk.type,
-        ...typeof chunk.text === 'string' ? { text: preview(chunk.text) } : {},
-        ...typeof chunk.argumentsDelta === 'string'
-          ? { tool: chunk.name, callId: chunk.id, argumentsDelta: preview(chunk.argumentsDelta) }
-          : {},
         ...chunk.type === 'block-end' ? { block: chunk.block } : {},
         ...chunk.type === 'usage' ? { usage: chunk.usage } : {},
         ...chunk.type === 'finish' ? { reason: chunk.reason } : {},
