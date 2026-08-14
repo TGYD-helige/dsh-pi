@@ -32,16 +32,18 @@ The repository at `../pi` is only read. Compatibility tests inventory its `packa
 
 ## Install as a DSH bundle
 
-From the parent directory:
+Install the published bundle and the Pi extensions you want in the same profile:
 
 ```sh
-dsh plugin --profile demo add ./dsh-pi \
+dsh plugin --profile demo add dsh-pi-host \
   @amaster.ai/pi-image-gen \
   @amaster.ai/pi-video-gen
 dsh --profile demo --dump-config
 ```
 
-The selected Pi packages must be installed in the same DSH profile so bare package specifiers resolve from that profile. DSH may warn that they declare no `dsh.bundle`; that is expected because they are plain dependencies loaded by `dsh-pi`, not independent DSH layers. Install any other package named in `extensions` the same way.
+For local development, replace `dsh-pi-host` with the path to this checkout, such as `./dsh-pi` when running from its parent directory.
+
+The selected Pi packages must be installed in the same DSH profile so bare package specifiers resolve from that profile. DSH may warn that they declare no `dsh.bundle`; that is expected because they are plain dependencies loaded by `dsh-pi-host`, not independent DSH layers. Install any other package named in `extensions` the same way.
 
 ### Choose Pi extensions
 
@@ -205,4 +207,4 @@ See [the detailed compatibility matrix](./docs/compatibility.md) and the executa
 
 ## Publishing
 
-Git installs need pnpm permission to run this package's `prepare` build. A registry publish or `pnpm pack` ships prebuilt `lib/` and needs no install-time build permission. This checkout is linked to the GitHub repository but has not been committed, pushed, or published to npm.
+Git installs need pnpm permission to run this package's `prepare` build. The npm package ships prebuilt `lib/` and needs no install-time build permission. Maintainers publish by pushing a tag that exactly matches the package version, for example `v0.1.0-rc.1`; the release workflow validates, builds, tests, and publishes `dsh-pi-host` with the repository's `NPM_TOKEN` secret. Prereleases use npm's `next` tag and stable versions use `latest`.
