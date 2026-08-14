@@ -1,6 +1,6 @@
 - insert:
     - id: dsh-pi
-      name: '@amaster.ai/dsh-pi'
+      name: 'dsh-pi-host'
       config:
         extensions: []
         projectTrusted: false

@@ -1,9 +1,26 @@
 {
-  "name": "@amaster.ai/dsh-pi",
-  "version": "0.0.0",
+  "name": "dsh-pi-host",
+  "version": "0.1.0-rc.1",
   "description": "Run Pi extensions as agent-scoped DeepSeek Harness plugins",
+  "keywords": [
+    "deepseek-harness",
+    "dsh-plugin",
+    "pi-extension",
+    "ai-agents"
+  ],
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/TGYD-helige/dsh-pi.git"
+  },
+  "homepage": "https://github.com/TGYD-helige/dsh-pi#readme",
+  "bugs": {
+    "url": "https://github.com/TGYD-helige/dsh-pi/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "lib",
     "cordis.patch.yml",
