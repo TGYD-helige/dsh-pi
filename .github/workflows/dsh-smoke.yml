@@ -76,6 +76,10 @@ jobs:
           test -n "$LANGFUSE_BASE_URL" || { echo "::error::LANGFUSE_BASE_URL is required"; exit 1; }
           test -n "$LANGFUSE_PUBLIC_KEY" || { echo "::error::LANGFUSE_PUBLIC_KEY is required"; exit 1; }
           test -n "$LANGFUSE_SECRET_KEY" || { echo "::error::LANGFUSE_SECRET_KEY is required"; exit 1; }
+          # Pasted secrets often carry a trailing newline, which corrupts Basic auth.
+          printf 'LANGFUSE_BASE_URL=%s\n' "$(printf '%s' "$LANGFUSE_BASE_URL" | tr -d '[:space:]')" >> "$GITHUB_ENV"
+          printf 'LANGFUSE_PUBLIC_KEY=%s\n' "$(printf '%s' "$LANGFUSE_PUBLIC_KEY" | tr -d '[:space:]')" >> "$GITHUB_ENV"
+          printf 'LANGFUSE_SECRET_KEY=%s\n' "$(printf '%s' "$LANGFUSE_SECRET_KEY" | tr -d '[:space:]')" >> "$GITHUB_ENV"
           if [ "${{ matrix.extension }}" = pi-web-access ]; then
             test -n "$FIRECRAWL_API_KEY" || { echo "::error::FIRECRAWL_API_KEY is required"; exit 1; }
           fi
