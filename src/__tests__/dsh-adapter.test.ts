@@ -123,7 +123,7 @@ describe('createDshToolDefinition', () => {
       saveImage,
       imageLimits: {
         maxImageBytes: 3, maxImagesPerMessage: 1, maxMessageImageBytes: 3,
-        maxImagePixels: 1, mediaTypes: ['image/png'],
+        maxImagePixels: 1, maxImageDimension: 1, mediaTypes: ['image/png'],
       },
     })
 

@@ -29,8 +29,40 @@ describe('toDshParameters', () => {
 
   it('rejects validation constraints that DSH cannot enforce', () => {
     expect(() => toDshParameters({
-      type: 'object', properties: { count: { type: 'integer', minimum: 1 } },
-    })).toThrow(/minimum/)
+      type: 'object', properties: { name: { type: 'string', minLength: 1 } },
+    })).toThrow(/minLength/)
+    expect(() => toDshParameters({
+      type: 'object', properties: { name: { type: 'string', pattern: '^a' } },
+    })).toThrow(/pattern/)
+  })
+
+  it('drops the $schema draft marker without failing', () => {
+    expect(toDshParameters({
+      $schema: 'http://json-schema.org/draft-07/schema#',
+      type: 'object',
+      properties: { url: { type: 'string' } },
+    })).toEqual({
+      type: 'object',
+      properties: { url: { type: 'string' } },
+    })
+  })
+
+  it('passes numeric bounds through to the model-facing schema', () => {
+    expect(toDshParameters({
+      type: 'object',
+      properties: {
+        count: { type: 'integer', minimum: 1, maximum: 10 },
+        ratio: { type: 'number', exclusiveMinimum: 0 },
+        items: { type: 'array', minItems: 1, items: { type: 'string' } },
+      },
+    })).toEqual({
+      type: 'object',
+      properties: {
+        count: { type: 'integer', minimum: 1, maximum: 10 },
+        ratio: { type: 'number', exclusiveMinimum: 0 },
+        items: { type: 'array', minItems: 1, items: { type: 'string' } },
+      },
+    })
   })
 
   it('rejects anyOf instead of narrowing overlapping alternatives to oneOf', () => {

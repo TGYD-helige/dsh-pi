@@ -52,7 +52,7 @@ jobs:
           pnpm pack --pack-destination "$RUNNER_TEMP"
           version=$(node -p "require('./package.json').version")
           echo "DSH_PI_TARBALL=$RUNNER_TEMP/dsh-pi-host-$version.tgz" >> "$GITHUB_ENV"
-      - run: npm install --global @deepseek-ai/dsh@0.1.0-rc.6
+      - run: npm install --global @deepseek-ai/dsh@0.1.5-rc.2
 
       - name: Configure DSH profile paths
         run: |

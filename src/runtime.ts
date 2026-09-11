@@ -271,6 +271,7 @@ async function finishLoad(result: LoadExtensionsResult, options: RuntimeOptions)
 
 export class PiExtensionRuntime {
   private started = false
+  private startQueue: Promise<unknown> = Promise.resolve()
 
   private constructor(
     private readonly load: RuntimeLoad,
@@ -314,16 +315,24 @@ export class PiExtensionRuntime {
     return this.load.state.sessionName
   }
 
+  /** Pi's session-transition contract: re-starting a started runtime with a non-startup reason emits session_shutdown first. */
   async start(reason: 'startup' | 'reload' | 'new' | 'resume' | 'fork' = 'startup'): Promise<void> {
-    if (this.started && reason === 'startup') return
-    this.load.state.activeToolsExplicitlySet = false
-    await this.load.runner.emit({ type: 'session_start', reason })
-    await this.load.runner.emitResourcesDiscover(this.options.cwd, reason === 'reload' ? 'reload' : 'startup')
-    if (!this.load.state.activeToolsExplicitlySet) {
-      this.load.state.activeTools = new Set(this.tools().map(tool => tool.name))
-    }
-    this.started = true
-    this.options.bridge?.refreshTools?.()
+    const queued = this.startQueue.then(async () => {
+      if (this.started) {
+        if (reason === 'startup') return
+        await this.load.runner.emit({ type: 'session_shutdown', reason })
+      }
+      this.load.state.activeToolsExplicitlySet = false
+      await this.load.runner.emit({ type: 'session_start', reason })
+      await this.load.runner.emitResourcesDiscover(this.options.cwd, reason === 'reload' ? 'reload' : 'startup')
+      if (!this.load.state.activeToolsExplicitlySet) {
+        this.load.state.activeTools = new Set(this.tools().map(tool => tool.name))
+      }
+      this.started = true
+      this.options.bridge?.refreshTools?.()
+    })
+    this.startQueue = queued.catch(() => undefined)
+    return queued
   }
 
   async emit(event: ExtensionEvent, signal?: AbortSignal): Promise<unknown> {

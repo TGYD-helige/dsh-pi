@@ -66,6 +66,10 @@ function sourceReason(source: SessionStartSource): 'startup' | 'resume' | 'new' 
   return 'startup'
 }
 
+function hasPendingMessages(agent: Agent): boolean {
+  return agent.inbox.nextTurn.length > 0 || agent.inbox.nextStep.length > 0
+}
+
 function messageText(messages: readonly UserMessage[]): string {
   return messages.flatMap(message => message.content)
     .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
@@ -226,7 +230,7 @@ async function mountAgent(ctx: Context, agent: Agent, config: Config, reason: Se
       refreshTools: () => { if (!disposing) mounted?.reconcile() },
       isIdle: () => agent.status === 'idle',
       waitForIdle: () => agent.whenIdle(),
-      hasPendingMessages: () => agent.inbox.hasPending,
+      hasPendingMessages: () => hasPendingMessages(agent),
       abort: () => { agent.cancel({ kind: 'hook', reason: 'Pi extension requested abort' }) },
       shutdown: () => { agent.cancel({ kind: 'hook', reason: 'Pi extension requested shutdown' }) },
       sendUserMessage: (content, options) => {
@@ -535,7 +539,7 @@ export function apply(ctx: Context, config: Config): void {
         failed = true
       }
       await mounted.drainDeliveries()
-      if (!entry.agent.inbox.hasPending) {
+      if (!hasPendingMessages(entry.agent)) {
         try {
           await mounted.runtime.emit({ type: 'agent_settled' })
         } catch {

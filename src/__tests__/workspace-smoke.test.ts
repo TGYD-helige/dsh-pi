@@ -18,7 +18,6 @@ describe('current Pi workspace smoke', () => {
       {
         package: 'pi-video-gen', entry: 'dist/index.js',
         tools: ['video_generate', 'video_compose', 'video_render', 'video_capabilities'], commands: ['video-gen'],
-        unsupported: ['video_generate'],
       },
       { package: 'pi-goal', entry: 'dist/index.js', tools: [], commands: ['goal'] },
       {
@@ -41,14 +40,9 @@ describe('current Pi workspace smoke', () => {
       expect(runtime.tools().map(tool => tool.name)).toEqual(fixture.tools)
       expect(runtime.commands().map(command => command.invocationName)).toEqual(fixture.commands)
       for (const tool of runtime.tools()) {
-        const adapt = () => createDshToolDefinition({
+        const definition = createDshToolDefinition({
           tool, execute: async () => ({ content: [{ type: 'text', text: 'unused' }], details: {} }),
         })
-        if (fixture.unsupported?.includes(tool.name) === true) {
-          expect(adapt).toThrow(/cannot be represented/)
-          continue
-        }
-        const definition = adapt()
         const dispose = ctx.tools.register(definition)
         expect(ctx.tools.schemas().some(schema => schema.name === tool.name)).toBe(true)
         dispose()

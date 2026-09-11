@@ -12,7 +12,7 @@ The executable source of truth is [`src/capabilities.ts`](../src/capabilities.ts
 
 | Area | Status | Notes |
 |---|---|---|
-| `registerTool` | partial | Execution, TypeBox validation, strict schema projection (including mutually exclusive literal unions), argument preparation, cancellation, sanitized errors, ordered updates, images, concurrency, active sets, and lifecycle-time registration/replacement. Successful text is bounded to 50KB/2000 lines, oversized details are omitted, and images are checked against DSH attachment limits before decoding. Overlapping unions, validation keywords outside DSH's enforced subset, and other unrepresentable schemas fail closed. Pi TUI renderers and DSH live update cards do not. |
+| `registerTool` | partial | Execution, TypeBox validation, strict schema projection (including mutually exclusive literal unions and numeric bounds `minimum`/`maximum`/`exclusiveMinimum`/`minItems`; `$schema` draft markers are dropped), argument preparation, cancellation, sanitized errors, ordered updates, images, concurrency, active sets, and lifecycle-time registration/replacement. Successful text is bounded to 50KB/2000 lines, oversized details are omitted, and images are checked against DSH attachment limits before decoding. Overlapping unions, validation keywords outside DSH's enforced subset, and other unrepresentable schemas fail closed. Pi TUI renderers and DSH live update cards do not. |
 | `registerCommand` | partial | Handlers, sanitized unexpected failures, and `ctx.ui.notify` text map to DSH command responses. Pi completions and interactive dialogs do not. |
 | flags | supported | `registerFlag` / `getFlag` defaults plus configured overrides use Pi's store. |
 | active tools/catalog | partial | Active names are filtered and adapted Pi registrations reconcile into DSH. Catalog APIs expose Pi extension tools/commands only, not DSH-native tools, commands, skills, or templates. |
@@ -45,8 +45,8 @@ The executable source of truth is [`src/capabilities.ts`](../src/capabilities.ts
 
 | Event group | Status | Notes |
 |---|---|---|
-| `session_start` | supported | Per-agent and awaited before the first DSH step. |
-| `session_shutdown` | partial | Emitted once and drained during teardown, but every DSH teardown is reported with Pi reason `quit`. |
+| `session_start` | supported | Per-agent and awaited before the first DSH step; re-emitted after `session_shutdown` on DSH resume/clear/compact. |
+| `session_shutdown` | partial | Emitted with the transition reason before each DSH resume/clear/compact restart and drained during teardown; teardown itself is reported with Pi reason `quit`. |
 | `input` | partial | `continue`, `handled`, and text/image transform run once for the initial claimed DSH message batch. Text is newline-joined, images are preserved, and a transform replaces the batch with one new DSH message identity. |
 | `agent_start`, `turn_start` | supported | Mapped from DSH turn/step boundaries. |
 | `agent_settled` | partial | Emitted after `agent_end` at a committed DSH turn end when the inbox has no pending messages; Pi and DSH queue semantics still differ. |
@@ -67,7 +67,7 @@ The executable source of truth is [`src/capabilities.ts`](../src/capabilities.ts
 The read-only inventory on `/Users/weaxs/Desktop/Workspace/pi` found 17 `packages/pi-*` packages, 11 used API methods, and 18 used events. Representative built-entry smoke tests loaded:
 
 - `pi-image-gen`: `image_generate`, `/image-gen`
-- `pi-video-gen`: four Pi tools load; DSH mounts three and rejects `video_generate` because its numeric `minimum` cannot be represented, `/video-gen`
+- `pi-video-gen`: all four Pi tools load and mount — `video_generate`'s numeric duration bounds pass through to the model-facing schema, `/video-gen`
 - `pi-goal`: `/goal`
 - `pi-memory`: four tools, including its TypeBox literal-union schemas, `/memory`
 - `pi-task-scheduler`: six tools, including its TypeBox literal-union schemas, `/cron`
