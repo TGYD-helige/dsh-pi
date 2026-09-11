@@ -7,6 +7,13 @@
 - id: plugin-package-inventory-deepseek
   config:
     enabled: false
+# Trace every smoke run; the final step asserts the session reaches Langfuse.
+- id: langfuse
+  config:
+    enabled: true
+    publicKey: !!js process.env.LANGFUSE_PUBLIC_KEY
+    secretKey: !!js process.env.LANGFUSE_SECRET_KEY
+    baseUrl: !!js process.env.LANGFUSE_BASE_URL
 - id: llm-deepseek
   config:
     apiKeyEnv: DSH_INTEGRATION_API_KEY

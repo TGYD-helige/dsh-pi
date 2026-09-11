@@ -25,9 +25,11 @@ export function apply(ctx) {
   const expectedTool = process.env.DSH_SMOKE_EXPECTED_TOOL
   const expectedResult = process.env.DSH_SMOKE_EXPECTED_RESULT
   const witness = process.env.DSH_SMOKE_WITNESS
-  assert(expectedTool && expectedResult && witness, 'DSH smoke probe environment is incomplete')
+  const sessionFile = process.env.DSH_SMOKE_SESSION_FILE
+  assert(expectedTool && expectedResult && witness && sessionFile, 'DSH smoke probe environment is incomplete')
 
   let restricted = false
+  let sessionWritten = false
   ctx.on('agent/pre-step', async ({ agent }, next) => {
     const decision = await next()
     if (!restricted) {
@@ -39,7 +41,11 @@ export function apply(ctx) {
     return decision
   })
 
-  ctx.on('session/event', (_session, event) => {
+  ctx.on('session/event', (session, event) => {
+    if (!sessionWritten) {
+      sessionWritten = true
+      writeFileSync(sessionFile, String(session.id))
+    }
     if (event.type === 'turn/start' || event.type === 'step/start' || event.type === 'step/end') {
       log(event, event.data)
       return

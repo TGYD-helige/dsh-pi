@@ -40,6 +40,9 @@ jobs:
       DSH_INTEGRATION_API_KEY: ${{ secrets.DSH_INTEGRATION_API_KEY }}
       DSH_INTEGRATION_BASE_URL: ${{ secrets.DSH_INTEGRATION_BASE_URL }}
       FIRECRAWL_API_KEY: ${{ secrets.FIRECRAWL_API_KEY }}
+      LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
 
     steps:
       - uses: actions/checkout@v4
@@ -69,12 +72,17 @@ jobs:
         run: |
           test -n "$DSH_INTEGRATION_BASE_URL" || { echo "::error::DSH_INTEGRATION_BASE_URL is required"; exit 1; }
           test -n "$DSH_INTEGRATION_API_KEY" || { echo "::error::DSH_INTEGRATION_API_KEY is required"; exit 1; }
+          test -n "$LANGFUSE_BASE_URL" || { echo "::error::LANGFUSE_BASE_URL is required"; exit 1; }
+          test -n "$LANGFUSE_PUBLIC_KEY" || { echo "::error::LANGFUSE_PUBLIC_KEY is required"; exit 1; }
+          test -n "$LANGFUSE_SECRET_KEY" || { echo "::error::LANGFUSE_SECRET_KEY is required"; exit 1; }
           if [ "${{ matrix.extension }}" = pi-web-access ]; then
             test -n "$FIRECRAWL_API_KEY" || { echo "::error::FIRECRAWL_API_KEY is required"; exit 1; }
           fi
 
-      - name: Install dsh-pi and ${{ matrix.extension }}
-        run: dsh plugin --profile headless add "$DSH_PI_TARBALL" "${{ matrix.package }}"
+      - name: Install dsh-pi, dsh-langfuse, and ${{ matrix.extension }}
+        # dsh-langfuse's Langfuse/OTEL peers are optional lazy imports and must be
+        # installed explicitly; dsh plugin add does not auto-install peer trees.
+        run: dsh plugin --profile headless add "$DSH_PI_TARBALL" "${{ matrix.package }}" @amaster.ai/dsh-langfuse@0.1.2 @langfuse/tracing @langfuse/otel @opentelemetry/sdk-trace-node @opentelemetry/api @opentelemetry/exporter-trace-otlp-http
 
       - name: Configure and verify the profile
         run: |
@@ -89,7 +97,12 @@ jobs:
           export DSH_SMOKE_EXPECTED_TOOL="${{ matrix.tool }}"
           export DSH_SMOKE_EXPECTED_RESULT="${{ matrix.expected-result }}"
           export DSH_SMOKE_WITNESS="$RUNNER_TEMP/${{ matrix.extension }}.loaded"
+          export DSH_SMOKE_SESSION_FILE="$RUNNER_TEMP/${{ matrix.extension }}.session"
           set -o pipefail
           dsh --profile headless --patch .github/dsh-smoke/model.patch.yml "${{ matrix.prompt }}" 2>&1 \
             | tee "$RUNNER_TEMP/${{ matrix.extension }}-dsh.log"
           test "$(cat "$DSH_SMOKE_WITNESS")" = "$DSH_SMOKE_EXPECTED_TOOL"
+
+      - name: Verify Langfuse traces
+        # Prints status codes only; keys stay in the Authorization header.
+        run: node .github/dsh-smoke/verify-langfuse.mjs
