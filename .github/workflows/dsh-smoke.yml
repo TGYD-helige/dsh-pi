@@ -67,6 +67,7 @@ jobs:
         run: |
           echo "DSH_HOME=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}" >> "$GITHUB_ENV"
           echo "PI_CODING_AGENT_DIR=$RUNNER_TEMP/dsh-home-${{ matrix.extension }}/profiles/headless" >> "$GITHUB_ENV"
+          echo "DSH_SMOKE_SESSION_FILE=$RUNNER_TEMP/${{ matrix.extension }}.session" >> "$GITHUB_ENV"
 
       - name: Validate integration secrets
         run: |
@@ -97,7 +98,6 @@ jobs:
           export DSH_SMOKE_EXPECTED_TOOL="${{ matrix.tool }}"
           export DSH_SMOKE_EXPECTED_RESULT="${{ matrix.expected-result }}"
           export DSH_SMOKE_WITNESS="$RUNNER_TEMP/${{ matrix.extension }}.loaded"
-          export DSH_SMOKE_SESSION_FILE="$RUNNER_TEMP/${{ matrix.extension }}.session"
           set -o pipefail
           dsh --profile headless --patch .github/dsh-smoke/model.patch.yml "${{ matrix.prompt }}" 2>&1 \
             | tee "$RUNNER_TEMP/${{ matrix.extension }}-dsh.log"

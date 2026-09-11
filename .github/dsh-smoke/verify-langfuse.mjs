@@ -26,6 +26,11 @@ while (Date.now() < deadline) {
   try {
     const response = await fetch(url, { headers: { authorization: `Basic ${auth}` } })
     lastStatus = `HTTP ${response.status}`
+    // Auth failures cannot heal by retrying; fail fast with the status only.
+    if (response.status === 401 || response.status === 403) {
+      console.error(`[dsh-pi-e2e] Langfuse rejected the configured credentials (${lastStatus})`)
+      process.exit(1)
+    }
     if (response.ok) {
       const body = await response.json()
       const traces = Array.isArray(body?.data) ? body.data : []
