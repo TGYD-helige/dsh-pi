@@ -59,7 +59,7 @@
     "prepare": "pnpm build"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-agent": "0.1.5-rc.2",
     "@deepseek-ai/dsh-attachment": "0.1.5-rc.2",
     "@deepseek-ai/dsh-commands": "0.1.5-rc.2",
@@ -69,12 +69,12 @@
   },
   "dependencies": {
     "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
-    "@deepseek-ai/schemastery": "^3.18.1",
+    "@deepseek-ai/schemastery": "^3.18.2",
     "@earendil-works/pi-coding-agent": "0.80.10",
     "typebox": "1.1.38"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.1",
+    "@deepseek-ai/cordis": "^4.0.2",
     "@deepseek-ai/dsh-agent": "0.1.5-rc.2",
     "@deepseek-ai/dsh-attachment": "0.1.5-rc.2",
     "@deepseek-ai/dsh-commands": "0.1.5-rc.2",
