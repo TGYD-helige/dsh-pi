@@ -1,0 +1,6 @@
+{
+  "pi-browser-use": {
+    "sessionMode": "isolated",
+    "headless": true
+  }
+}

@@ -6,7 +6,7 @@ export interface Capability {
 }
 
 export const extensionApiCapabilities = {
-  registerTool: { status: 'partial', note: 'Execution, fail-closed schema projection including disjoint literal unions, cancellation, sanitized errors, bounded results, ordered updates, images, lifecycle-time registration/replacement, active-tool changes, and concurrency map; unsupported validation keywords, Pi renderers, and DSH streaming UI do not.' },
+  registerTool: { status: 'partial', note: 'Execution, fail-closed schema projection including disjoint literal unions and numeric bounds (minimum/maximum/exclusiveMinimum/minItems), cancellation, sanitized errors, bounded results, ordered updates, images, lifecycle-time registration/replacement, active-tool changes, and concurrency map; unsupported validation keywords, Pi renderers, and DSH streaming UI do not.' },
   registerCommand: { status: 'partial', note: 'Slash command handlers, sanitized unexpected failures, and notify text map; completions and Pi UI dialogs do not.' },
   registerShortcut: { status: 'unsupported', note: 'DSH has no plugin-owned keyboard shortcut registry.' },
   registerFlag: { status: 'supported', note: 'Defaults and configured overrides use the Pi runner.' },
@@ -61,13 +61,13 @@ export const extensionContextCapabilities = {
 export const extensionEventCapabilities = {
   project_trust: { status: 'partial', note: 'The configured trust decision controls ctx.isProjectTrusted; interactive trust handlers are not run.' },
   resources_discover: { status: 'partial', note: 'Pi handlers run, but returned skills/prompts/themes are not registered in DSH.' },
-  session_start: { status: 'supported', note: 'Mapped from DSH agent/session-start and awaited before first pre-step.' },
+  session_start: { status: 'supported', note: 'Mapped from DSH agent/session-start and awaited before first pre-step; re-emitted after session_shutdown on DSH resume/clear/compact.' },
   session_info_changed: { status: 'unsupported', note: 'No DSH title projection listener yet.' },
   session_before_switch: { status: 'unsupported', note: 'No direct DSH session-switch veto point.' },
   session_before_fork: { status: 'unsupported', note: 'No direct DSH fork veto mapping yet.' },
   session_before_compact: { status: 'unsupported', note: 'DSH compaction owns a different contract.' },
-  session_compact: { status: 'unsupported', note: 'Compact currently restarts session_start with reload semantics only.' },
-  session_shutdown: { status: 'partial', note: 'Runs once and drains on agent/plugin disposal, but DSH teardown is always reported with Pi reason quit.' },
+  session_compact: { status: 'unsupported', note: 'Compact currently maps to a session_shutdown/session_start restart with reload semantics only.' },
+  session_shutdown: { status: 'partial', note: 'Runs with the transition reason before each DSH resume/clear/compact restart; agent/plugin disposal still reports Pi reason quit.' },
   session_before_tree: { status: 'unsupported', note: 'Pi session-tree navigation has no DSH equivalent.' },
   session_tree: { status: 'unsupported', note: 'Pi session-tree navigation has no DSH equivalent.' },
   context: { status: 'unsupported', note: 'DSH request reconstruction is durable and cannot accept Pi mutable message arrays directly.' },

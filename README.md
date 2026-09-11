@@ -2,7 +2,7 @@
 
 Run trusted, unmodified [Pi extensions](https://pi.dev/docs/latest/extensions) inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). This is a compatibility host, not a source-to-source converter: Pi's official loader and `ExtensionRunner` own Pi semantics, while this package adapts their observable surface to agent-scoped DSH tools, commands, messages, attachments, and lifecycle hooks.
 
-The project currently targets Pi `0.80.x` and DSH `0.1.0-rc.6`. DSH is still a developer preview; the peer range is intentionally narrow.
+The project currently targets Pi `0.80.x` and DSH `0.1.5-rc.2`. DSH is still a developer preview; the peer range is intentionally narrow.
 
 ## Why a host instead of generated plugins
 
@@ -61,7 +61,7 @@ Then override the bundle row in the profile's `cordis.patch.yml`. DSH replaces a
     flags: {}
 ```
 
-`strict: true` fails agent composition when any selected Pi tool schema cannot be represented without widening it. With `strict: false`, those tools are skipped, excluded from the Pi-visible adapted active set, and retried only after their definition changes or they are reactivated; for the current `pi-video-gen` fixture this skips `video_generate` because DSH cannot enforce its numeric `minimum`, while the other three video tools still mount.
+`strict: true` fails agent composition when any selected Pi tool schema cannot be represented without widening it. With `strict: false`, those tools are skipped, excluded from the Pi-visible adapted active set, and retried only after their definition changes or they are reactivated. Numeric bounds (`minimum`/`maximum`/`exclusiveMinimum`/`minItems`) pass through to the model-facing schema — execution still validates against the original TypeBox schema — so the current `pi-video-gen` fixture mounts all four tools, including `video_generate`.
 
 For local fixture packages, enable the explicit code-execution boundary:
 
@@ -122,7 +122,7 @@ Status:
 | Pi ExtensionAPI | Closest DSH capability | Implemented here | Notes |
 |---|---|---:|---|
 | `pi.on(...)` | Cordis `ctx.on(...)` and DSH agent/session/tool events | 🟡 Partial | See the lifecycle-event table below. |
-| `pi.registerTool(...)` | `agent.ctx.tools.register(...)` | 🟡 Partial | Execution, strict schema projection (including disjoint TypeBox literal unions), `prepareArguments`, cancellation, sanitized errors, ordered updates, images, concurrency, active-tool changes and lifecycle-time registration/replacement work. Successful text is bounded to 50KB/2000 lines, oversized details are omitted, and images are checked against DSH attachment limits before decoding. Unrepresentable schemas are rejected; Pi TUI renderers and DSH live update cards do not. |
+| `pi.registerTool(...)` | `agent.ctx.tools.register(...)` | 🟡 Partial | Execution, strict schema projection (including disjoint TypeBox literal unions and numeric bounds; `$schema` draft markers are dropped), `prepareArguments`, cancellation, sanitized errors, ordered updates, images, concurrency, active-tool changes and lifecycle-time registration/replacement work. Successful text is bounded to 50KB/2000 lines, oversized details are omitted, and images are checked against DSH attachment limits before decoding. Unrepresentable schemas are rejected; Pi TUI renderers and DSH live update cards do not. |
 | `pi.registerCommand(...)` | `agent.ctx.commands.register(...)` | 🟡 Partial | Command handlers, sanitized unexpected failures, and `ctx.ui.notify` text work. Pi completions and interactive `ctx.ui` dialogs do not. |
 | `pi.registerShortcut(...)` | No plugin-owned DSH keyboard-shortcut registry | ❌ Unsupported | Requires a separate client/UI plugin. |
 | `pi.registerFlag(...)` | DSH plugin config plus the embedded Pi flag store | ✅ Supported | Defaults and configured overrides use Pi's official runner. |
@@ -178,11 +178,11 @@ Status:
 |---|---|---:|
 | `project_trust` | Deployment/plugin trust configuration | 🟡 Configured `projectTrusted` controls `ctx.isProjectTrusted()`; the interactive handler is not run. |
 | `resources_discover` | DSH skill and system-prompt registries | 🟡 Handler runs, but returned skill/prompt/theme paths are not mounted into DSH. |
-| `session_start` | `agent/session-start` | ✅ Per-agent and awaited before the first step. |
-| `session_shutdown` | `agent/disposed` / Cordis effect disposal | 🟡 Runs once and drains during agent or plugin teardown, but every DSH teardown is reported to Pi with reason `quit`. |
+| `session_start` | `agent/session-start` | ✅ Per-agent and awaited before the first step; re-emitted after `session_shutdown` on DSH resume/clear/compact. |
+| `session_shutdown` | `agent/disposed` / Cordis effect disposal | 🟡 Runs with the transition reason before each DSH resume/clear/compact restart and drains during agent or plugin teardown; teardown is reported to Pi with reason `quit`. |
 | `session_info_changed` | DSH session-title projection | ❌ Not mapped. |
 | `session_before_switch`, `session_before_fork` | DSH session preparation/publication | ❌ No equivalent veto mapping yet. |
-| `session_before_compact`, `session_compact` | DSH compaction plugins/events | ❌ Different compaction contract; only reload-style startup is currently emitted after compact lifecycle changes. |
+| `session_before_compact`, `session_compact` | DSH compaction plugins/events | ❌ Different compaction contract; a `session_shutdown`/`session_start` restart with reload semantics is emitted after compact lifecycle changes. |
 | `session_before_tree`, `session_tree` | DSH event-sourced session history | ❌ Pi tree navigation has no direct DSH equivalent. |
 | `input` | First `agent/pre-step` of a DSH turn | 🟡 `continue`, `handled`, and text/image transforms run once for the initial claimed DSH message batch. Text is newline-joined, images are preserved, and a transform replaces the claimed batch with one new DSH message identity. |
 | `before_agent_start` | First `agent/pre-step` plus `system-prompt/assemble` | 🟡 Handler runs once per agent run; returned custom messages and system-prompt replacement are not applied yet. |

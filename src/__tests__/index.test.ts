@@ -14,7 +14,7 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
   let cleanup: (() => Promise<void>) | undefined
   const sessionMessages: unknown[] = []
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
-  const inbox = { hasPending: false }
+  const inbox = { nextTurn: [] as unknown[], nextStep: [] as unknown[] }
   const attachments = {
     imageLimits: {
       maxImageBytes: 1024,
@@ -52,7 +52,7 @@ function createHarness(extension: string, options: { strict?: boolean } = {}) {
   const agent = {
     id: 'agent-1', status: 'idle', options: {}, inbox, cancel: vi.fn(),
     whenIdle: vi.fn(async () => {}),
-    send: vi.fn(), followup: vi.fn(() => { inbox.hasPending = true }), steer: vi.fn(), inject: vi.fn(),
+    send: vi.fn(), followup: vi.fn((message: unknown) => { inbox.nextTurn.push(message) }), steer: vi.fn(), inject: vi.fn(),
     session: { header: { cwd: '/workspace' }, deriveMessages: () => sessionMessages },
     ctx: {
       inject: (_services: string[], callback: (ctx: unknown) => void) => {
@@ -110,6 +110,28 @@ describe('dsh-pi plugin', () => {
 
     expect(assembly.tools.map(tool => tool.name)).toContain('echo')
     await harness.cleanup()
+  })
+
+  it('shuts the Pi session down before restarting it on a DSH resume', async () => {
+    const events: string[] = []
+    ;(globalThis as { __piRestartEvents?: string[] }).__piRestartEvents = events
+    try {
+      const harness = createHarness(fixture('restart'))
+
+      harness.handlers.get('agent/session-start')?.({ agent: harness.agent, source: 'startup' } as never)
+      await vi.waitFor(() => expect(events).toEqual(['session_start:startup']))
+      harness.handlers.get('agent/session-start')?.({ agent: harness.agent, source: 'resume' } as never)
+      harness.handlers.get('agent/session-start')?.({ agent: harness.agent, source: 'compact' } as never)
+      await vi.waitFor(() => expect(events).toEqual([
+        'session_start:startup', 'session_shutdown:resume', 'session_start:resume',
+        'session_shutdown:reload', 'session_start:reload',
+      ]))
+
+      expect(harness.tools).toContain('browser')
+      await harness.cleanup()
+    } finally {
+      delete (globalThis as { __piRestartEvents?: string[] }).__piRestartEvents
+    }
   })
 
   it('does not wake an idle agent for non-triggering Pi messages', async () => {

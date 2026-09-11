@@ -2,6 +2,18 @@
   config:
     provider: deepseek-official
     model: deepseek-v4-flash
+# The smoke probe is a loose profile module; 0.1.5-rc.2's default-on package inventory
+# rejects it because the CLI-generated profile package.json has a name but no version.
+- id: plugin-package-inventory-deepseek
+  config:
+    enabled: false
+# Trace every smoke run; the final step asserts the session reaches Langfuse.
+- id: langfuse
+  config:
+    enabled: true
+    publicKey: !!js process.env.LANGFUSE_PUBLIC_KEY
+    secretKey: !!js process.env.LANGFUSE_SECRET_KEY
+    baseUrl: !!js process.env.LANGFUSE_BASE_URL
 - id: llm-deepseek
   config:
     apiKeyEnv: DSH_INTEGRATION_API_KEY

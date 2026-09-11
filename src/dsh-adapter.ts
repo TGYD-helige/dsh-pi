@@ -1,4 +1,3 @@
-import type { JsonValue } from '@deepseek-ai/dsh-session'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { ToolDefinition as DshToolDefinition } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentLimits, ImageAttachmentRef, ImageMediaType } from '@deepseek-ai/dsh-attachment'
@@ -8,7 +7,7 @@ import { toDshParameters } from './schema.js'
 
 interface CanonicalToolValue {
   content: ContentBlock[]
-  details?: JsonValue
+  details?: unknown
   terminate?: true
 }
 
@@ -22,12 +21,12 @@ export interface DshToolAdapterOptions {
   imageLimits?: ImageAttachmentLimits
 }
 
-function jsonValue(value: unknown): JsonValue | undefined {
+function jsonValue(value: unknown): unknown {
   if (value === undefined) return undefined
   try {
     const serialized = JSON.stringify(value)
     if (serialized === undefined || Buffer.byteLength(serialized) > DEFAULT_MAX_BYTES) return undefined
-    return JSON.parse(serialized) as JsonValue
+    return JSON.parse(serialized)
   } catch {
     return undefined
   }
@@ -67,6 +66,7 @@ export async function piContentToDsh(
     maxImagesPerMessage: 20,
     maxMessageImageBytes: 20 * 1024 * 1024,
     maxImagePixels: Number.MAX_SAFE_INTEGER,
+    maxImageDimension: Number.MAX_SAFE_INTEGER,
     mediaTypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
   },
 ): Promise<ContentBlock[]> {

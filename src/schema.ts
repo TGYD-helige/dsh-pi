@@ -1,9 +1,14 @@
 import type { JsonSchemaNode, ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
 
-const annotations = new Set(['description', 'title', 'default', 'examples'])
+const passthroughKeywords = new Set([
+  'description', 'title', 'default', 'examples',
+  'minimum', 'maximum', 'exclusiveMinimum', 'minItems',
+])
 const supportedKeywords = new Set([
   'type', 'oneOf', 'anyOf', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const',
-  ...annotations,
+  // zod-to-json-schema draft metadata; droppable because it carries no validation meaning
+  '$schema',
+  ...passthroughKeywords,
 ])
 
 function isDisjointLiteralUnion(branches: unknown[]): boolean {
@@ -55,7 +60,9 @@ function convert(value: unknown, path: string): JsonSchemaNode {
   if (input.items !== undefined) output.items = convert(input.items, `${path}.items`)
   if (input.enum !== undefined) output.enum = structuredClone(input.enum)
   if (Object.hasOwn(input, 'const')) output.const = structuredClone(input.const)
-  for (const key of annotations) {
+  // Bounds only affect the LLM-facing projection: DSH validates a tool's output.schema at registration
+  // (dsh-tools), and args are re-validated at execution against the original TypeBox schema (runtime.ts Value.Check).
+  for (const key of passthroughKeywords) {
     if (input[key] !== undefined) output[key] = structuredClone(input[key])
   }
   return output as JsonSchemaNode

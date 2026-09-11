@@ -47,6 +47,48 @@ describe('PiExtensionRuntime', () => {
     await runtime.shutdown()
   })
 
+  it('emits session_shutdown before re-running session_start on restart', async () => {
+    const events: string[] = []
+    ;(globalThis as { __piRestartEvents?: string[] }).__piRestartEvents = events
+    try {
+      const runtime = await PiExtensionRuntime.fromPaths([fixture('restart')], { cwd: '/workspace' })
+
+      await runtime.start('startup')
+      await runtime.start('resume')
+
+      expect(events).toEqual(['session_start:startup', 'session_shutdown:resume', 'session_start:resume'])
+      expect(runtime.tools().map(tool => tool.name)).toEqual(['browser'])
+      const result = await runtime.executeTool('browser', {}, { callId: 'restart' })
+      expect(result.content).toEqual([{ type: 'text', text: 'ok' }])
+      await runtime.shutdown()
+      expect(events).toEqual([
+        'session_start:startup', 'session_shutdown:resume', 'session_start:resume', 'session_shutdown:quit',
+      ])
+    } finally {
+      delete (globalThis as { __piRestartEvents?: string[] }).__piRestartEvents
+    }
+  })
+
+  it('serializes back-to-back session transitions in shutdown-start order', async () => {
+    const events: string[] = []
+    ;(globalThis as { __piRestartEvents?: string[] }).__piRestartEvents = events
+    try {
+      const runtime = await PiExtensionRuntime.fromPaths([fixture('restart')], { cwd: '/workspace' })
+      await runtime.start('startup')
+
+      await Promise.all([runtime.start('resume'), runtime.start('reload')])
+
+      expect(events).toEqual([
+        'session_start:startup',
+        'session_shutdown:resume', 'session_start:resume',
+        'session_shutdown:reload', 'session_start:reload',
+      ])
+      await runtime.shutdown()
+    } finally {
+      delete (globalThis as { __piRestartEvents?: string[] }).__piRestartEvents
+    }
+  })
+
   it('uses prepareArguments, forwards cancellation and publishes streaming updates', async () => {
     const update = vi.fn()
     const controller = new AbortController()
