@@ -30,6 +30,12 @@ jobs:
             tool: web_fetch
             expected-result: 'Example Domain'
             prompt: "Use web_fetch exactly once on https://example.com with prompt 'Return the page title'. Then report the title."
+          - extension: pi-browser-use
+            package: '@amaster.ai/pi-browser-use@0.1.15'
+            specifier: '@amaster.ai/pi-browser-use'
+            tool: browser_navigate_page
+            expected-result: 'Example Domain'
+            prompt: "Use browser_navigate_page exactly once to navigate to https://example.com. Then report the page title."
     env:
       DSH_INTEGRATION_API_KEY: ${{ secrets.DSH_INTEGRATION_API_KEY }}
       DSH_INTEGRATION_BASE_URL: ${{ secrets.DSH_INTEGRATION_BASE_URL }}
