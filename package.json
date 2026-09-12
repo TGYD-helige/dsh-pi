@@ -1,6 +1,6 @@
 {
   "name": "dsh-pi-host",
-  "version": "0.1.0-rc.2",
+  "version": "0.1.0-rc.3",
   "description": "Run Pi extensions as agent-scoped DeepSeek Harness plugins",
   "keywords": [
     "deepseek-harness",
