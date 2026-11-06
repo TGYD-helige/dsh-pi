@@ -1,0 +1,42 @@
+name: Refresh lockfile (temporary)
+
+# Temporary helper for this branch only: the GitHub connector used to create the branch cannot
+# carry a 91 KB file, so the lockfile for the Pi 1.x pin is generated here and committed by CI.
+# Delete this workflow once pnpm-lock.yaml is on the branch.
+
+on:
+  push:
+    branches: ['agent/pi-1x-compat-gate']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/pi-1x-compat-gate
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+      - name: Resolve the lockfile for the current manifest
+        run: pnpm install --lockfile-only --no-frozen-lockfile
+      - name: Commit the lockfile
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- pnpm-lock.yaml; then
+            echo "pnpm-lock.yaml already matches package.json"
+            exit 0
+          fi
+          git add pnpm-lock.yaml
+          git commit -m "chore: refresh pnpm-lock.yaml for the Pi 1.x pin"
+          git push origin HEAD:agent/pi-1x-compat-gate
