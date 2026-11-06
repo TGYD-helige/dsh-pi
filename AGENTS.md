@@ -4,7 +4,7 @@
 
 `dsh-pi-host` runs trusted, unmodified Pi extensions inside DeepSeek Harness (DSH). It is a compatibility host, not a source converter: Pi's official loader and `ExtensionRunner` own Pi behavior, while this package adapts observable tools, commands, messages, attachments, and lifecycle events into agent-scoped DSH capabilities.
 
-The project targets Node.js 22+, Pi `0.80.x`, and DSH `0.1.5-rc.2`. DSH is still a developer preview, so keep its peer range narrow unless compatibility has been verified.
+The project targets Node.js 22+, Pi `>=1.5.0 <2.0.0`, and DSH `0.1.5-rc.2`. DSH is still a developer preview, so keep its peer range narrow unless compatibility has been verified. `src/support.ts` is the single source of truth for those ranges; `src/__tests__/support.test.ts` and `pnpm compat:upstream` fail when the manifest, the docs, or the registry disagree with it.
 
 ## Required Skills
 
