@@ -129,7 +129,14 @@ fi
 
 echo "== mount Pi extension tools"
 cp "$repo_root/scripts/compat/list-tools.mjs" "$profile/list-tools.mjs"
-(cd "$profile" && node list-tools.mjs "$extension") > "$work/tools.txt" 2> "$work/tools.err"
+# Install accepts a version spec; resolution inside the profile uses the bare package name.
+extension_name="$extension"
+case "$extension" in
+  @*/*@*) extension_name="${extension%@*}" ;;
+  @*) extension_name="$extension" ;;
+  *@*) extension_name="${extension%@*}" ;;
+esac
+(cd "$profile" && node list-tools.mjs "$extension_name") > "$work/tools.txt" 2> "$work/tools.err"
 
 tools=$(sed -n 's/^TOOLS=//p' "$work/tools.txt")
 host_version=$(sed -n 's/^HOST_VERSION=//p' "$work/tools.txt")
