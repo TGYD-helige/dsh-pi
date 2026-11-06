@@ -2,12 +2,17 @@ import {
   createEventBus,
   ExtensionRunner,
   SessionManager,
+  SettingsManager,
+  VERSION,
 } from '@earendil-works/pi-coding-agent'
+import { realpathSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type {
   AgentToolResult,
+  BuildSystemPromptOptions,
   ExtensionActions,
   ExtensionContextActions,
   ExtensionEvent,
@@ -18,6 +23,7 @@ import type {
   ResolvedCommand,
 } from '@earendil-works/pi-coding-agent'
 import { Value } from 'typebox/value'
+import { isSupportedPiVersion, SUPPORTED_UPSTREAMS } from './support.js'
 
 export interface RuntimeBridge {
   reportError?(context: string): void
@@ -107,11 +113,51 @@ interface RuntimeState {
   signalStore: AsyncLocalStorage<AbortSignal | undefined>
   thinkingLevel: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
   sessionManager: SessionManager
+  settingsManager: SettingsManager
   sessionName?: string
+}
+
+/**
+ * A Pi extension imported from another install of `@earendil-works/pi-coding-agent` gets a
+ * different loader, event bus, and registry than this host. That mismatch happens as soon as a
+ * DSH profile hoists a different Pi version, and it fails silently: extensions register onto an
+ * instance nobody reads. Refuse to start instead, naming both locations.
+ */
+function assertSinglePiInstance(paths: string[], piEntry: string): void {
+  const host = realpathSync(piEntry)
+  for (const extension of paths) {
+    let resolved: string
+    try {
+      resolved = realpathSync(createRequire(extension).resolve('@earendil-works/pi-coding-agent'))
+    } catch {
+      // The extension does not import Pi or cannot resolve it; the loader reports that itself.
+      continue
+    }
+    if (resolved === host) continue
+    throw new Error(
+      `Pi instance mismatch: this host loaded ${host}, but ${extension} resolves ${resolved}. ` +
+      'Install one @earendil-works/pi-coding-agent version in the DSH profile.',
+    )
+  }
+}
+
+/**
+ * Refuse a Pi version the host was not built for. A DSH profile can hoist or override
+ * `@earendil-works/pi-coding-agent`; that install still loads and still mounts tools, then fails
+ * inside a tool call or event handler, which reads as a host bug instead of a version mismatch.
+ */
+function assertSupportedPiVersion(version: string): void {
+  if (isSupportedPiVersion(version)) return
+  throw new Error(
+    `Unsupported @earendil-works/pi-coding-agent ${version}: this host requires ${SUPPORTED_UPSTREAMS.pi.range}. ` +
+    'Install one supported Pi version in the DSH profile, or upgrade dsh-pi-host.',
+  )
 }
 
 async function loadSelectedExtensions(paths: string[], cwd: string): Promise<LoadExtensionsResult> {
   const piEntry = fileURLToPath(import.meta.resolve('@earendil-works/pi-coding-agent'))
+  assertSupportedPiVersion(VERSION)
+  assertSinglePiInstance(paths, piEntry)
   const loader = await import(pathToFileURL(join(dirname(piEntry), 'core/extensions/loader.js')).href) as {
     loadExtensions(paths: string[], cwd: string, eventBus: ReturnType<typeof createEventBus>): Promise<LoadExtensionsResult>
   }
@@ -176,7 +222,11 @@ function bindActions(
       name: definition.name,
       description: definition.description,
       parameters: definition.parameters,
+      // Pi 1.x reports how the model reaches a tool; this host applies no loadout pass.
+      exposure: definition.exposure ?? 'direct',
       ...(definition.promptGuidelines === undefined ? {} : { promptGuidelines: definition.promptGuidelines }),
+      ...(definition.namespace === undefined ? {} : { namespace: definition.namespace }),
+      ...(definition.annotations === undefined ? {} : { annotations: definition.annotations }),
       sourceInfo,
     })),
     setActiveTools: (names) => {
@@ -199,6 +249,7 @@ function bindActions(
       source: 'extension' as const,
       sourceInfo: command.sourceInfo,
     })),
+    getSettings: () => state.settingsManager.getSettings(),
     setModel: async model => bridge.setModel === undefined ? false : bridge.setModel(model),
     getThinkingLevel: () => state.thinkingLevel,
     setThinkingLevel: (level) => { state.thinkingLevel = level },
@@ -218,6 +269,8 @@ function bindActions(
       compact: compactOptions => { bridge.compact?.(compactOptions) },
       getSystemPrompt: () => bridge.getSystemPrompt?.() ?? '',
       getSystemPromptOptions: () => ({ cwd: options.cwd }),
+      // DSH owns model routing, so the embedded session exposes no Pi model scopes.
+      getScopedModels: () => [],
     },
   }
 }
@@ -235,6 +288,8 @@ async function finishLoad(result: LoadExtensionsResult, options: RuntimeOptions)
     signalStore: new AsyncLocalStorage<AbortSignal | undefined>(),
     thinkingLevel: 'off',
     sessionManager: SessionManager.inMemory(options.cwd),
+    // This host reads no Pi settings files; extensions see Pi's own defaults.
+    settingsManager: SettingsManager.inMemory(),
   }
   let runner: ExtensionRunner | undefined
   const bound = bindActions(result.runtime, options, state, () => runner)
@@ -344,7 +399,12 @@ export class PiExtensionRuntime {
         if (event.type === 'before_provider_request') return this.load.runner.emitBeforeProviderRequest(event.payload)
         if (event.type === 'before_provider_headers') return this.load.runner.emitBeforeProviderHeaders(event.headers)
         if (event.type === 'before_agent_start') {
-          return this.load.runner.emitBeforeAgentStart(event.prompt, event.images, event.systemPrompt, event.systemPromptOptions)
+          return this.load.runner.emitBeforeAgentStart(
+            event.messageType === 'user'
+              ? { messageType: 'user', prompt: event.prompt, ...(event.images === undefined ? {} : { images: event.images }) }
+              : { messageType: 'custom', message: event.message },
+            event.systemPromptOptions as BuildSystemPromptOptions,
+          )
         }
         if (event.type === 'message_end') return this.load.runner.emitMessageEnd(event)
         if (event.type === 'user_bash') return this.load.runner.emitUserBash(event)
@@ -352,7 +412,9 @@ export class PiExtensionRuntime {
           return this.load.runner.emitInput(event.text, event.images, event.source, event.streamingBehavior)
         }
         if (event.type === 'project_trust' || event.type === 'resources_discover') return undefined
-        return this.load.runner.emit(event)
+        // Pi 1.x narrowed runner.emit() to the events it dispatches on its own contract. This host
+        // still forwards lifecycle events it projects itself, so keep the widened call.
+        return this.load.runner.emit(event as Parameters<ExtensionRunner['emit']>[0])
       })
     } finally {
       this.options.bridge?.refreshTools?.()
@@ -388,7 +450,7 @@ export class PiExtensionRuntime {
           updates = updates.then(() => this.load.runner.emit({
             type: 'tool_execution_update', toolCallId: options.callId, toolName: name, args: input, partialResult: partial,
           }))
-        }, this.load.runner.createContext()) as PiToolExecutionResult
+        }, this.load.runner.createToolContext(options.callId, options.signal)) as PiToolExecutionResult
       } catch (error) {
         result = isAbortFailure(error, options.signal) ? abortedToolResult() : unexpectedToolFailure(this.options, name)
       }
