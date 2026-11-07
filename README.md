@@ -43,6 +43,8 @@ pnpm compat /absolute/path/to/pi
 
 The repository at `../pi` is only read. Compatibility tests inventory its `packages/pi-*` manifests and source API usage; representative smoke tests load built entries without calling paid tools.
 
+`pnpm install` runs this package's `prepare` script, so it also builds `lib/`; `pnpm build` rebuilds `lib/` alone after `src/` changes. Anything that loads the package from a checkout — a DSH profile linking it, `scripts/compat/list-tools.mjs` — needs that build to have run.
+
 Upstream compatibility gate (see [docs/upstream-compat.md](./docs/upstream-compat.md)):
 
 ```sh
@@ -62,9 +64,31 @@ dsh plugin --profile demo add dsh-pi-host@0.1.0-rc.4 \
 dsh --profile demo --dump-config
 ```
 
-The host version is pinned on purpose. `dsh plugin add dsh-pi-host` without a version installs whatever the registry's `latest` dist-tag points at, which is not necessarily the version documented here; `pnpm compat:upstream` fails while the tag and this repository disagree, and [the release checklist](./docs/upstream-compat.md#release-checklist) keeps them aligned without relying on memory.
+The host version is pinned on purpose. `dsh plugin add dsh-pi-host` without a version installs whatever the registry's `latest` dist-tag points at, which is not necessarily the version documented here; `pnpm compat:upstream --fail-on-release-drift` exits non-zero while the tag and this repository disagree, and [the release checklist](./docs/upstream-compat.md#release-checklist) keeps them aligned without relying on memory.
 
-For local development, replace `dsh-pi-host@<version>` with the path to this checkout, such as `./dsh-pi` when running from its parent directory.
+For local development, point the profile at this checkout instead of the published version. The package entry point is `lib/index.js`, which only exists after a build, and `dsh plugin add <path>` links the directory without building it, so build the checkout first:
+
+```sh
+cd /absolute/path/to/dsh-pi
+pnpm install --frozen-lockfile   # `prepare` runs `pnpm build` and writes lib/
+cd ..
+# A `link:` dependency does not install its own dependencies into the profile, so name the Pi
+# runtime (the version from the table above) next to the checkout and the extensions.
+dsh plugin --profile demo add ./dsh-pi \
+  @earendil-works/pi-coding-agent@1.5.0 \
+  @amaster.ai/pi-image-gen
+```
+
+In a checkout whose dependencies are already installed, `pnpm build` is enough to (re)create `lib/`. Linking an unbuilt checkout does not fail at `dsh plugin add`; the profile fails when it loads, with `ERR_MODULE_NOT_FOUND ... dsh-pi-host/lib/index.js`, while `dsh --profile demo --dump-config` still prints the composed config because it only checks the wiring.
+
+`--dump-config` composes the bundle row and its `extensions` list; it does not load the Pi extensions or list their tools. To confirm an extension actually mounted tools, run the listing from the profile directory:
+
+```sh
+cd "$DSH_HOME/profiles/demo"
+node /absolute/path/to/dsh-pi/scripts/compat/list-tools.mjs @amaster.ai/pi-image-gen
+```
+
+It prints `HOST_VERSION=`, `PI_VERSION=`, `TOOLS=` and `COMMANDS=`, and exits non-zero when no Pi tool mounted.
 
 The selected Pi packages must be installed in the same DSH profile so bare package specifiers resolve from that profile. DSH may warn that they declare no `dsh.bundle`; that is expected because they are plain dependencies loaded by `dsh-pi-host`, not independent DSH layers. Install any other package named in `extensions` the same way.
 
