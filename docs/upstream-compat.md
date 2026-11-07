@@ -29,13 +29,27 @@ pnpm smoke:install     # clean-room install of this version, then list mounted P
 pnpm check             # unit, adapter, lifecycle, resolver, and support-declaration tests
 ```
 
-`pnpm compat:upstream` distinguishes two different findings, and exits non-zero only for the
-first:
+`pnpm compat:upstream` distinguishes three different findings. Which of them fail the command
+depends on the flags:
 
 - **drift** — this repository and the published package disagree, or `package.json` disagrees with
   `src/support.ts`, or a newer release exists inside the declared range. Someone must act.
+- **pending-release** — the repository version is not the version the default install resolves to.
+  That is the normal state between bumping `version` and promoting the dist-tag, so it is reported
+  but does not fail unless `--fail-on-release-drift` is passed.
 - **notice** — upstream published a release outside the declared range (a new major line). That is
   an evaluation decision, not an automatic bump.
+
+### Exit codes
+
+| Command | Exit 0 | Exit 1 | Exit 2 |
+|---|---|---|---|
+| `pnpm compat:upstream` | no drift — `pending-release` and `notice` rows are printed but do not fail | drift | not used |
+| `pnpm compat:upstream --fail-on-release-drift` | no drift and no `pending-release` row | drift, or a `pending-release` row | not used |
+| `pnpm compat:upstream --fail-on-upstream` | no drift and no `notice` row | drift | a `notice` row |
+
+The flags change how findings are counted, never which findings are reported: read the report, not
+just the exit code.
 
 `pnpm smoke:install` performs the README install path in a clean room — fresh npm cache, fresh
 pnpm store, fresh `DSH_HOME` — then loads the installed bundle and lists the Pi extension tools it
@@ -55,7 +69,11 @@ docker run --rm dsh-pi-compat --host-spec latest
 `.github/workflows/upstream-compat.yml` runs on a daily schedule, on `workflow_dispatch`, and on
 `repository_dispatch` of type `upstream-release`. It runs:
 
-1. `pnpm check` and `pnpm compat:upstream` — declaration and registry drift.
+1. `pnpm check` and `pnpm compat:upstream` — declaration and registry drift. This step runs
+   without `--fail-on-release-drift` on purpose: the default branch is legitimately ahead of the
+   registry between a version bump and the release checklist's promotion step, and that window
+   must not turn the daily gate red. Promotion is verified by the flagged command in
+   [the release checklist](#release-checklist), not by this job.
 2. `pnpm smoke:install` — the pinned version still installs and mounts a Pi tool.
 3. `pnpm smoke:install --pi-version latest` — the newest upstream Pi still loads the host and a
    real published Pi extension.
@@ -109,9 +127,16 @@ deliberately.
    ```
 
    `npm-tag.yml` performs the same promotion from a workflow dispatch.
-5. `pnpm compat:upstream` must report no drift. It compares the repository version against the
-   `latest`/`next` tag it expects, so a forgotten promotion fails the gate instead of silently
-   shipping the previous release to new users.
+5. Verify the promotion with the flagged form of the gate:
+
+   ```sh
+   pnpm compat:upstream --fail-on-release-drift
+   ```
+
+   It exits `0` only when no `drift` and no `pending-release` row remains; a forgotten promotion
+   exits `1` and names the tag that still points at the previous release, instead of silently
+   shipping it to new users. The plain `pnpm compat:upstream` that the daily workflow runs reports
+   the same rows but exits `0` for them, so it cannot be the post-promotion check.
 6. Update the README install command to the published version. `src/__tests__/support.test.ts`
    keeps the manifest and the documentation tables consistent; the install command is checked by
    `pnpm smoke:install`, which installs exactly that version.
