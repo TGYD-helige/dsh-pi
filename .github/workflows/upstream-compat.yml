@@ -42,6 +42,10 @@ jobs:
       # support.test.ts fails when package.json, README, or docs/compatibility.md drift from
       # src/support.ts, including the pinned install command.
       - run: pnpm check
+      # No --fail-on-release-drift here on purpose: after a version bump the repository is ahead
+      # of the registry until the release checklist promotes the dist-tag, and this daily gate
+      # must not go red in that window. The post-promotion check is the flagged command in
+      # docs/upstream-compat.md#release-checklist, which is the form that exits 1 on a lagging tag.
       - name: Upstream compatibility report
         run: pnpm compat:upstream | tee upstream-report.md
       - name: Publish the report
