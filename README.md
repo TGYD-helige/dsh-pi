@@ -2,7 +2,20 @@
 
 Run trusted, unmodified [Pi extensions](https://pi.dev/docs/latest/extensions) inside [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness). This is a compatibility host, not a source-to-source converter: Pi's official loader and `ExtensionRunner` own Pi semantics, while this package adapts their observable surface to agent-scoped DSH tools, commands, messages, attachments, and lifecycle hooks.
 
-The project currently targets Pi `0.80.x` and DSH `0.1.5-rc.2`. DSH is still a developer preview; the peer range is intentionally narrow.
+The project currently targets Pi `>=1.5.0 <2.0.0` and DSH `0.1.5-rc.2`. DSH is still a developer preview; its peer range is intentionally narrow.
+
+## Supported upstream versions
+
+| Component | Supported | Built and tested against | Notes |
+|---|---|---|---|
+| Pi coding agent (`@earendil-works/pi-coding-agent`) | `>=1.5.0 <2.0.0` | `1.5.0` | Pi `1.x` changed `before_agent_start`, tool info, and boundary events; the `0.80.x` line no longer starts. See [the compatibility matrix](./docs/compatibility.md#pi-1x-contract). |
+| DeepSeek Harness CLI (`@deepseek-ai/dsh`) | `0.1.5-rc.2` | `0.1.5-rc.2` | The `@deepseek-ai/dsh-*` peers are `^0.1.5-rc.2`. |
+| Node.js | `>=22.19.0` | `22.19.0` in CI | `package.json#engines` |
+| pnpm | `10.x` | `10.28.2` in CI | `dsh plugin` forwards to pnpm, so pnpm must be on `PATH`. |
+
+A DSH profile can hoist or override `@earendil-works/pi-coding-agent`. The host checks the version it actually loaded and refuses to start outside the supported range, naming the version and the range, instead of mounting tools and failing later inside a call.
+
+`src/support.ts` is the machine-readable form of this table. `src/__tests__/support.test.ts` fails when this table, [`docs/compatibility.md`](./docs/compatibility.md), or `package.json` disagree with it.
 
 ## Why a host instead of generated plugins
 
@@ -30,18 +43,52 @@ pnpm compat /absolute/path/to/pi
 
 The repository at `../pi` is only read. Compatibility tests inventory its `packages/pi-*` manifests and source API usage; representative smoke tests load built entries without calling paid tools.
 
-## Install as a DSH bundle
+`pnpm install` runs this package's `prepare` script, so it also builds `lib/`; `pnpm build` rebuilds `lib/` alone after `src/` changes. Anything that loads the package from a checkout — a DSH profile linking it, `scripts/compat/list-tools.mjs` — needs that build to have run.
 
-Install the published bundle and the Pi extensions you want in the same profile:
+Upstream compatibility gate (see [docs/upstream-compat.md](./docs/upstream-compat.md)):
 
 ```sh
-dsh plugin --profile demo add dsh-pi-host \
+pnpm compat:upstream   # registry and declaration drift, read-only, no install
+pnpm smoke:install     # clean-room install of this version, then list mounted Pi tools
+```
+
+## Install as a DSH bundle
+
+Install the DSH CLI version this release targets, then the bundle at the version this repository ships, plus the Pi extensions you want in the same profile:
+
+```sh
+npm install --global @deepseek-ai/dsh@0.1.5-rc.2 pnpm@10.28.2
+dsh plugin --profile demo add dsh-pi-host@0.1.0-rc.4 \
   @amaster.ai/pi-image-gen \
   @amaster.ai/pi-video-gen
 dsh --profile demo --dump-config
 ```
 
-For local development, replace `dsh-pi-host` with the path to this checkout, such as `./dsh-pi` when running from its parent directory.
+The host version is pinned on purpose. `dsh plugin add dsh-pi-host` without a version installs whatever the registry's `latest` dist-tag points at, which is not necessarily the version documented here; `pnpm compat:upstream --fail-on-release-drift` exits non-zero while the tag and this repository disagree, and [the release checklist](./docs/upstream-compat.md#release-checklist) keeps them aligned without relying on memory.
+
+For local development, point the profile at this checkout instead of the published version. The package entry point is `lib/index.js`, which only exists after a build, and `dsh plugin add <path>` links the directory without building it, so build the checkout first:
+
+```sh
+cd /absolute/path/to/dsh-pi
+pnpm install --frozen-lockfile   # `prepare` runs `pnpm build` and writes lib/
+cd ..
+# A `link:` dependency does not install its own dependencies into the profile, so name the Pi
+# runtime (the version from the table above) next to the checkout and the extensions.
+dsh plugin --profile demo add ./dsh-pi \
+  @earendil-works/pi-coding-agent@1.5.0 \
+  @amaster.ai/pi-image-gen
+```
+
+In a checkout whose dependencies are already installed, `pnpm build` is enough to (re)create `lib/`. Linking an unbuilt checkout does not fail at `dsh plugin add`; the profile fails when it loads, with `ERR_MODULE_NOT_FOUND ... dsh-pi-host/lib/index.js`, while `dsh --profile demo --dump-config` still prints the composed config because it only checks the wiring.
+
+`--dump-config` composes the bundle row and its `extensions` list; it does not load the Pi extensions or list their tools. To confirm an extension actually mounted tools, run the listing from the profile directory:
+
+```sh
+cd "$DSH_HOME/profiles/demo"
+node /absolute/path/to/dsh-pi/scripts/compat/list-tools.mjs @amaster.ai/pi-image-gen
+```
+
+It prints `HOST_VERSION=`, `PI_VERSION=`, `TOOLS=` and `COMMANDS=`, and exits non-zero when no Pi tool mounted.
 
 The selected Pi packages must be installed in the same DSH profile so bare package specifiers resolve from that profile. DSH may warn that they declare no `dsh.bundle`; that is expected because they are plain dependencies loaded by `dsh-pi-host`, not independent DSH layers. Install any other package named in `extensions` the same way.
 
@@ -207,4 +254,14 @@ See [the detailed compatibility matrix](./docs/compatibility.md) and the executa
 
 ## Publishing
 
-Git installs need pnpm permission to run this package's `prepare` build. The npm package ships prebuilt `lib/` and needs no install-time build permission. Maintainers publish by pushing a tag that exactly matches the package version, for example `v0.1.0-rc.2`; the release workflow validates, builds, tests, and publishes `dsh-pi-host` with the repository's `NPM_TOKEN` secret. Prereleases use npm's `next` tag and stable versions use `latest`.
+Git installs need pnpm permission to run this package's `prepare` build. The npm package ships prebuilt `lib/` and needs no install-time build permission. Maintainers publish by pushing a tag that exactly matches the package version, for example `v0.1.0-rc.4`; the release workflow validates, builds, tests, and publishes `dsh-pi-host` with the repository's `NPM_TOKEN` secret. Prereleases use npm's `next` tag and stable versions use `latest`.
+
+A release is not done until the default install resolves to the published version:
+
+```sh
+npm dist-tag add dsh-pi-host@<version> latest   # `next` for a prerelease
+npm view dsh-pi-host dist-tags
+pnpm compat:upstream                            # must report no drift
+```
+
+`npm-tag.yml` performs the same promotion from a workflow dispatch; see [docs/upstream-compat.md](./docs/upstream-compat.md#release-checklist).
