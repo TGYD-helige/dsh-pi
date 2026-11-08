@@ -5,26 +5,18 @@
  *
  *   drift            this repository contradicts itself or the declared support range.
  *                    Exit 1: fix the manifest, the pin, or the declaration.
- *   pending-release  the repository version is not the one the default install resolves to.
- *                    Expected before a release; exit 1 only with `--fail-on-release-drift`,
- *                    which the release checklist uses after promoting the dist-tag.
+ *   pending-release  this version is not on the dist-tag its release line promotes. A stable
+ *                    version promotes `latest`, a prerelease promotes `next` and leaves `latest`
+ *                    on the previous release. Expected before a release; exit 1 only with
+ *                    `--fail-on-release-drift`, which the release checklist uses after promoting.
  *   notice           upstream published a release outside the declared range. An evaluation
  *                    decision, never an automatic bump. Exit 2 with `--fail-on-upstream`.
  *
  * Usage: pnpm compat:upstream [--fail-on-release-drift] [--fail-on-upstream]
  */
 import { readFile } from 'node:fs/promises'
+import { pathToFileURL } from 'node:url'
 import { SUPPORTED_NODE, SUPPORTED_UPSTREAMS, type Upstream } from '../src/support.js'
-
-const failOnReleaseDrift = process.argv.includes('--fail-on-release-drift')
-const failOnUpstream = process.argv.includes('--fail-on-upstream')
-const repoRoot = new URL('../', import.meta.url)
-const manifest = JSON.parse(await readFile(new URL('package.json', repoRoot), 'utf8')) as {
-  version: string
-  dependencies: Record<string, string>
-  peerDependencies: Record<string, string>
-  engines: { node: string }
-}
 
 interface Release {
   major: number
@@ -61,8 +53,67 @@ const sameLine = (version: string, line: { major: number; minor: number }) => {
   return release.major === line.major && release.minor === line.minor
 }
 
+export type Status = 'ok' | 'drift' | 'pending-release' | 'notice'
+
+export interface Finding {
+  status: Status
+  scope: string
+  detail: string
+}
+
 /** npm puts prereleases on `next` and stable versions on `latest`; `release.yml` does the same. */
-const distTagFor = (version: string) => version.includes('-') ? 'next' : 'latest'
+export const distTagFor = (version: string) => version.includes('-') ? 'next' : 'latest'
+
+export interface OwnReleaseInput {
+  version: string
+  distTags: Record<string, string | undefined>
+}
+
+/**
+ * Own-release findings for one repository version and the registry's dist-tags.
+ *
+ * Only the tag this release line promotes is compared against `version`. A prerelease is published
+ * to `next`, and `npm publish` does not move `latest` for it, so `latest` still resolving to the
+ * previous release is the expected state until a stable version ships — not a pending release. A
+ * stable version does land on `latest`, which is also the default install, so that tag is compared
+ * there.
+ */
+export function ownReleaseFindings({ version, distTags }: OwnReleaseInput): Finding[] {
+  const findings: Finding[] = []
+  const expectedTag = distTagFor(version)
+  const promoted = distTags[expectedTag]
+  if (promoted === version) {
+    findings.push({ status: 'ok', scope: 'own release', detail: `npm \`${expectedTag}\` is ${version}` })
+  } else {
+    findings.push({ status: 'pending-release', scope: 'own release', detail: `npm \`${expectedTag}\` is ${promoted ?? 'missing'}, repository is ${version}` })
+  }
+
+  const defaultInstall = distTags.latest
+  if (expectedTag === 'latest') {
+    findings.push({ status: 'ok', scope: 'own release', detail: '`latest` is both the promotion target and the default install for a stable version' })
+  } else if (defaultInstall === version) {
+    findings.push({ status: 'ok', scope: 'own release', detail: `npm \`latest\` also resolves to ${version}` })
+  } else {
+    findings.push({ status: 'ok', scope: 'own release', detail: `npm \`latest\` stays at ${defaultInstall ?? 'nothing published'}; a prerelease promotes \`next\` only, so the default install is expected to differ` })
+  }
+
+  findings.push({ status: 'ok', scope: 'own release', detail: `publishing ${version} would set dist-tag \`${expectedTag}\`; verify with \`npm view dsh-pi-host dist-tags\`` })
+  return findings
+}
+
+export interface GateFlags {
+  failOnReleaseDrift: boolean
+  failOnUpstream: boolean
+}
+
+/** Exit code of a finished report: drift always fails, the other two statuses only when flagged. */
+export function exitCodeFor(findings: readonly Finding[], flags: GateFlags): number {
+  const count = (status: Status) => findings.filter(item => item.status === status).length
+  if (count('drift') > 0) return 1
+  if (count('pending-release') > 0 && flags.failOnReleaseDrift) return 1
+  if (count('notice') > 0 && flags.failOnUpstream) return 2
+  return 0
+}
 
 interface RegistryDocument {
   'dist-tags': Record<string, string>
@@ -78,29 +129,12 @@ async function registry(pkg: string): Promise<RegistryDocument> {
   return await response.json() as RegistryDocument
 }
 
-type Status = 'ok' | 'drift' | 'pending-release' | 'notice'
-interface Finding {
-  status: Status
-  scope: string
-  detail: string
-}
-
 const findings: Finding[] = []
 const add = (status: Status, scope: string, detail: string) => { findings.push({ status, scope, detail }) }
 
-async function checkOwnRelease(): Promise<void> {
+async function checkOwnRelease(version: string): Promise<void> {
   const document = await registry('dsh-pi-host')
-  const tags = document['dist-tags']
-  const expectedTag = distTagFor(manifest.version)
-  const promoted = tags[expectedTag]
-  if (promoted === manifest.version) add('ok', 'own release', `npm \`${expectedTag}\` is ${manifest.version}`)
-  else add('pending-release', 'own release', `npm \`${expectedTag}\` is ${promoted ?? 'missing'}, repository is ${manifest.version}`)
-
-  const defaultInstall = tags.latest
-  if (defaultInstall === manifest.version) add('ok', 'own release', `default install (\`latest\`) is ${manifest.version}`)
-  else add('pending-release', 'own release', `default install (\`latest\`) resolves to ${defaultInstall ?? 'missing'}, not ${manifest.version}`)
-
-  add('ok', 'own release', `publishing ${manifest.version} would set dist-tag \`${expectedTag}\`; verify with \`npm view dsh-pi-host dist-tags\``)
+  findings.push(...ownReleaseFindings({ version, distTags: document['dist-tags'] }))
 }
 
 async function checkUpstream(label: string, upstream: Upstream, dependency: string | undefined): Promise<void> {
@@ -132,32 +166,50 @@ async function checkUpstream(label: string, upstream: Upstream, dependency: stri
   add('notice', label, `registry latest is ${latest} (${direction} than declared ${upstream.range}) — evaluate, do not auto-bump`)
 }
 
-await checkOwnRelease()
-await checkUpstream('Pi coding agent', SUPPORTED_UPSTREAMS.pi, manifest.dependencies[SUPPORTED_UPSTREAMS.pi.package])
-await checkUpstream('DSH', SUPPORTED_UPSTREAMS.dsh, manifest.dependencies['@deepseek-ai/dsh-llm'])
+async function main(): Promise<void> {
+  const failOnReleaseDrift = process.argv.includes('--fail-on-release-drift')
+  const failOnUpstream = process.argv.includes('--fail-on-upstream')
+  const repoRoot = new URL('../', import.meta.url)
+  const manifest = JSON.parse(await readFile(new URL('package.json', repoRoot), 'utf8')) as {
+    version: string
+    dependencies: Record<string, string>
+    peerDependencies: Record<string, string>
+    engines: { node: string }
+  }
 
-const dshPeers = Object.entries(manifest.peerDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
-const pinnedPeerRange = `^${SUPPORTED_UPSTREAMS.dsh.pinned}`
-const driftedPeers = dshPeers.filter(([, range]) => range !== pinnedPeerRange)
-if (dshPeers.length === 0) add('drift', 'DSH', 'no @deepseek-ai/dsh-* peer dependencies declared')
-else if (driftedPeers.length === 0) add('ok', 'DSH', `${dshPeers.length} peers use ${pinnedPeerRange}`)
-else add('drift', 'DSH', `peers must use ${pinnedPeerRange}: ${driftedPeers.map(([name, range]) => `${name}@${range}`).join(', ')}`)
+  await checkOwnRelease(manifest.version)
+  await checkUpstream('Pi coding agent', SUPPORTED_UPSTREAMS.pi, manifest.dependencies[SUPPORTED_UPSTREAMS.pi.package])
+  await checkUpstream('DSH', SUPPORTED_UPSTREAMS.dsh, manifest.dependencies['@deepseek-ai/dsh-llm'])
 
-if (manifest.engines.node === SUPPORTED_NODE) add('ok', 'Node.js', `engines.node is ${SUPPORTED_NODE}`)
-else add('drift', 'Node.js', `engines.node is ${manifest.engines.node}, declaration is ${SUPPORTED_NODE}`)
+  const dshPeers = Object.entries(manifest.peerDependencies).filter(([name]) => name.startsWith('@deepseek-ai/dsh-'))
+  const pinnedPeerRange = `^${SUPPORTED_UPSTREAMS.dsh.pinned}`
+  const driftedPeers = dshPeers.filter(([, range]) => range !== pinnedPeerRange)
+  if (dshPeers.length === 0) add('drift', 'DSH', 'no @deepseek-ai/dsh-* peer dependencies declared')
+  else if (driftedPeers.length === 0) add('ok', 'DSH', `${dshPeers.length} peers use ${pinnedPeerRange}`)
+  else add('drift', 'DSH', `peers must use ${pinnedPeerRange}: ${driftedPeers.map(([name, range]) => `${name}@${range}`).join(', ')}`)
 
-const drift = findings.filter(item => item.status === 'drift')
-const pending = findings.filter(item => item.status === 'pending-release')
-const notices = findings.filter(item => item.status === 'notice')
-console.log('# Upstream compatibility report\n')
-console.log('| Area | Status | Detail |')
-console.log('|---|---|---|')
-for (const item of findings) console.log(`| ${item.scope} | ${item.status} | ${item.detail} |`)
-console.log(`\nRepository: \`dsh-pi-host@${manifest.version}\`. Drift: ${drift.length}. Pending release: ${pending.length}. Upstream notices: ${notices.length}.`)
-if (drift.length > 0) console.log('\nAction required: `drift` rows contradict the repository or the declared support.')
-if (pending.length > 0) console.log('`pending-release` rows resolve when this version is published and its dist-tag is promoted; see docs/upstream-compat.md#release-checklist.')
-if (notices.length > 0) console.log('Notices need an evaluation decision; see docs/upstream-compat.md.')
+  if (manifest.engines.node === SUPPORTED_NODE) add('ok', 'Node.js', `engines.node is ${SUPPORTED_NODE}`)
+  else add('drift', 'Node.js', `engines.node is ${manifest.engines.node}, declaration is ${SUPPORTED_NODE}`)
 
-if (drift.length > 0) process.exitCode = 1
-else if (pending.length > 0 && failOnReleaseDrift) process.exitCode = 1
-else if (notices.length > 0 && failOnUpstream) process.exitCode = 2
+  const drift = findings.filter(item => item.status === 'drift')
+  const pending = findings.filter(item => item.status === 'pending-release')
+  const notices = findings.filter(item => item.status === 'notice')
+  console.log('# Upstream compatibility report\n')
+  console.log('| Area | Status | Detail |')
+  console.log('|---|---|---|')
+  for (const item of findings) console.log(`| ${item.scope} | ${item.status} | ${item.detail} |`)
+  console.log(`\nRepository: \`dsh-pi-host@${manifest.version}\`. Drift: ${drift.length}. Pending release: ${pending.length}. Upstream notices: ${notices.length}.`)
+  if (drift.length > 0) console.log('\nAction required: `drift` rows contradict the repository or the declared support.')
+  if (pending.length > 0) console.log('`pending-release` rows resolve when this version is published and the dist-tag its release line promotes is moved; see docs/upstream-compat.md#release-checklist.')
+  if (notices.length > 0) console.log('Notices need an evaluation decision; see docs/upstream-compat.md.')
+
+  process.exitCode = exitCodeFor(findings, { failOnReleaseDrift, failOnUpstream })
+}
+
+// `pnpm compat:upstream` runs the gate; a test importing the pure helpers must not hit the registry.
+// Every invocation outside a test runner is treated as the gate, so a stale path check can never
+// make the CI step pass by doing nothing.
+const invokedAsGate = process.env['VITEST'] === undefined
+  || (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === import.meta.url)
+
+if (invokedAsGate) await main()
