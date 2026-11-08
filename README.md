@@ -64,7 +64,7 @@ dsh plugin --profile demo add dsh-pi-host@0.1.0-rc.4 \
 dsh --profile demo --dump-config
 ```
 
-The host version is pinned on purpose. `dsh plugin add dsh-pi-host` without a version installs whatever the registry's `latest` dist-tag points at, which is not necessarily the version documented here; `pnpm compat:upstream --fail-on-release-drift` exits non-zero while the tag and this repository disagree, and [the release checklist](./docs/upstream-compat.md#release-checklist) keeps them aligned without relying on memory.
+The host version is pinned on purpose. `dsh plugin add dsh-pi-host` without a version installs whatever the registry's `latest` dist-tag points at, which is not necessarily the version documented here; `pnpm compat:upstream --fail-on-release-drift` exits non-zero while the tag this release line promotes (`latest` for a stable version, `next` for a prerelease) and this repository disagree, and [the release checklist](./docs/upstream-compat.md#release-checklist) keeps them aligned without relying on memory.
 
 For local development, point the profile at this checkout instead of the published version. The package entry point is `lib/index.js`, which only exists after a build, and `dsh plugin add <path>` links the directory without building it, so build the checkout first:
 
@@ -256,12 +256,12 @@ See [the detailed compatibility matrix](./docs/compatibility.md) and the executa
 
 Git installs need pnpm permission to run this package's `prepare` build. The npm package ships prebuilt `lib/` and needs no install-time build permission. Maintainers publish by pushing a tag that exactly matches the package version, for example `v0.1.0-rc.4`; the release workflow validates, builds, tests, and publishes `dsh-pi-host` with the repository's `NPM_TOKEN` secret. Prereleases use npm's `next` tag and stable versions use `latest`.
 
-A release is not done until the default install resolves to the published version:
+A release is not done until the tag its line promotes resolves to the published version — `latest` for a stable version, `next` for a prerelease. A prerelease leaves `latest` on the previous release, so the default install stays on stable code:
 
 ```sh
-npm dist-tag add dsh-pi-host@<version> latest   # `next` for a prerelease
+npm dist-tag add dsh-pi-host@<version> next     # `latest` for a stable version
 npm view dsh-pi-host dist-tags
-pnpm compat:upstream                            # must report no drift
+pnpm compat:upstream --fail-on-release-drift    # must report no drift and no pending-release
 ```
 
 `npm-tag.yml` performs the same promotion from a workflow dispatch; see [docs/upstream-compat.md](./docs/upstream-compat.md#release-checklist).
