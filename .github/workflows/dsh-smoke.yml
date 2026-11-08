@@ -115,5 +115,5 @@ jobs:
           test "$(cat "$DSH_SMOKE_WITNESS")" = "$DSH_SMOKE_EXPECTED_TOOL"
 
       - name: Verify Langfuse traces
-        # Prints only status codes; keys stay in the Authorization header.
+        # Prints status codes only; keys stay in the Authorization header.
         run: node .github/dsh-smoke/verify-langfuse.mjs
