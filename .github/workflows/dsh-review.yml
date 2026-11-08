@@ -54,8 +54,14 @@ jobs:
           test -n "$DSH_INTEGRATION_API_KEY" || { echo '::error::DSH_INTEGRATION_API_KEY is not configured'; exit 1; }
 
       - name: Install DSH
+        # `npm install --global` nests @deepseek-ai/dsh-sandbox-local under
+        # dsh-base, where dsh 0.1.5-rc.2 profile boot cannot resolve it and
+        # exits before the model call. A --prefix install keeps the layout
+        # boot resolves (dsh-* packages as direct children of dsh itself).
         run: |
-          npm install --global @deepseek-ai/dsh@0.1.5-rc.2
+          npm install --prefix "$RUNNER_TEMP/dsh" @deepseek-ai/dsh@0.1.5-rc.2
+          export PATH="$RUNNER_TEMP/dsh/node_modules/.bin:$PATH"
+          echo "$RUNNER_TEMP/dsh/node_modules/.bin" >> "$GITHUB_PATH"
           dsh --version
 
       - name: Prepare untrusted PR data for review
