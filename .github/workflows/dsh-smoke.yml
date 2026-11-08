@@ -61,7 +61,14 @@ jobs:
           pnpm pack --pack-destination "$RUNNER_TEMP"
           version=$(node -p "require('./package.json').version")
           echo "DSH_PI_TARBALL=$RUNNER_TEMP/dsh-pi-host-$version.tgz" >> "$GITHUB_ENV"
-      - run: npm install --global @deepseek-ai/dsh@0.1.5-rc.2
+      - name: Install DeepSeek Harness
+        # `npm install --global` nests @deepseek-ai/dsh-sandbox-local under
+        # dsh-base, where dsh 0.1.5-rc.2 profile boot cannot resolve it and
+        # exits before the model call. A --prefix install keeps the layout
+        # boot resolves (dsh-* packages as direct children of dsh itself).
+        run: |
+          npm install --prefix "$RUNNER_TEMP/dsh" @deepseek-ai/dsh@0.1.5-rc.2
+          echo "$RUNNER_TEMP/dsh/node_modules/.bin" >> "$GITHUB_PATH"
 
       - name: Configure DSH profile paths
         run: |
@@ -108,5 +115,5 @@ jobs:
           test "$(cat "$DSH_SMOKE_WITNESS")" = "$DSH_SMOKE_EXPECTED_TOOL"
 
       - name: Verify Langfuse traces
-        # Prints status codes only; keys stay in the Authorization header.
+        # Prints only status codes; keys stay in the Authorization header.
         run: node .github/dsh-smoke/verify-langfuse.mjs
