@@ -34,9 +34,11 @@ depends on the flags:
 
 - **drift** — this repository and the published package disagree, or `package.json` disagrees with
   `src/support.ts`, or a newer release exists inside the declared range. Someone must act.
-- **pending-release** — the repository version is not the version the default install resolves to.
-  That is the normal state between bumping `version` and promoting the dist-tag, so it is reported
-  but does not fail unless `--fail-on-release-drift` is passed.
+- **pending-release** — this version is not on the dist-tag its release line promotes: `latest` for
+  a stable version, `next` for a prerelease. A prerelease never moves `latest`, so `latest` still
+  resolving to the previous release is the expected state, not a finding. Pending rows are the
+  normal state between bumping `version` and promoting the tag, so they are reported but do not
+  fail unless `--fail-on-release-drift` is passed.
 - **notice** — upstream published a release outside the declared range (a new major line). That is
   an evaluation decision, not an automatic bump.
 
@@ -111,18 +113,19 @@ Known limits of this automation, stated so nobody assumes more coverage than exi
 
 ## Release checklist
 
-A release is only complete when the default install resolves to the published version. The
-registry's `latest` tag is not moved by `npm publish` for prereleases, so it must be promoted
-deliberately.
+A release is complete when the dist-tag its line promotes resolves to the published version:
+`latest` for a stable version, `next` for a prerelease. `npm publish` does not move `latest` for a
+prerelease, and that tag is left on the previous release on purpose, so a prerelease is never
+expected to become the default install.
 
 1. Bump `version` in `package.json`; update `src/support.ts` if an upstream pin changed.
 2. `pnpm check` and `pnpm compat:upstream`. Fix drift before tagging.
 3. Push a tag that exactly matches the version (`v0.1.0-rc.4`). `release.yml` re-runs the checks,
    validates the tag, and publishes with `next` for prereleases and `latest` for stable versions.
-4. Promote the default install:
+4. Promote the tag this release line moves:
 
    ```sh
-   npm dist-tag add dsh-pi-host@<version> latest   # `next` for a prerelease
+   npm dist-tag add dsh-pi-host@<version> next     # `latest` for a stable version
    npm view dsh-pi-host dist-tags
    ```
 
@@ -133,10 +136,13 @@ deliberately.
    pnpm compat:upstream --fail-on-release-drift
    ```
 
-   It exits `0` only when no `drift` and no `pending-release` row remains; a forgotten promotion
-   exits `1` and names the tag that still points at the previous release, instead of silently
-   shipping it to new users. The plain `pnpm compat:upstream` that the daily workflow runs reports
-   the same rows but exits `0` for them, so it cannot be the post-promotion check.
+   It exits `0` only when no `drift` and no `pending-release` row remains. For a prerelease the
+   pending row is cleared by `next`, which is the tag step 4 moved; `latest` is not compared
+   against a prerelease, so a gate that demanded it could never pass for the version this
+   repository ships until a stable release. A forgotten promotion exits `1` and names the tag
+   that still points at the previous release, instead of silently shipping it to new users. The
+   plain `pnpm compat:upstream` that the daily workflow runs reports the same rows but exits `0`
+   for them, so it cannot be the post-promotion check.
 6. Update the README install command to the published version. `src/__tests__/support.test.ts`
    keeps the manifest and the documentation tables consistent; the install command is checked by
    `pnpm smoke:install`, which installs exactly that version.
