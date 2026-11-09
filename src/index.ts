@@ -500,10 +500,12 @@ export function apply(ctx: Context, config: Config): void {
         if (!inserted) entered.unshift(transformed)
       }
       await mounted.runtime.emit({
-        type: 'before_agent_start', prompt, systemPrompt: '',
+        type: 'before_agent_start', messageType: 'user', prompt, systemPrompt: '',
         ...(images.length === 0 ? {} : { images }),
-        // Pi 1.x renders the event's system prompt from these options. An empty forced prompt
-        // keeps DSH's own system prompt authoritative for the embedded Pi session.
+        // Pi 1.x dispatches this event on `messageType`: only a `'user'` trigger forwards
+        // `prompt` and `images` to handlers (see docs/compatibility.md). Pi also renders the
+        // event's system prompt from these options; an empty forced prompt keeps DSH's own
+        // system prompt authoritative for the embedded Pi session.
         systemPromptOptions: { cwd: agent.session.header.cwd ?? process.cwd(), forceSystemPrompt: '' },
       } as unknown as ExtensionEvent, signal)
       mounted.lastTurn = turn
