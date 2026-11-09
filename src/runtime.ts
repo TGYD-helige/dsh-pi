@@ -5,7 +5,7 @@ import {
   SettingsManager,
   VERSION,
 } from '@earendil-works/pi-coding-agent'
-import { realpathSync } from 'node:fs'
+import { readFileSync, realpathSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { dirname, join } from 'node:path'
@@ -118,10 +118,36 @@ interface RuntimeState {
 }
 
 /**
- * A Pi extension imported from another install of `@earendil-works/pi-coding-agent` gets a
- * different loader, event bus, and registry than this host. That mismatch happens as soon as a
- * DSH profile hoists a different Pi version, and it fails silently: extensions register onto an
- * instance nobody reads. Refuse to start instead, naming both locations.
+ * The Pi release a resolved entry belongs to, found by walking up to its package manifest. The
+ * entry can sit in `dist/` or at the package root, so the depth is not fixed.
+ */
+function readPiVersion(entry: string): string | undefined {
+  let directory = dirname(entry)
+  while (true) {
+    try {
+      const manifest = JSON.parse(readFileSync(join(directory, 'package.json'), 'utf8')) as {
+        name?: unknown
+        version?: unknown
+      }
+      if (manifest.name === SUPPORTED_UPSTREAMS.pi.package && typeof manifest.version === 'string') {
+        return manifest.version
+      }
+    } catch {
+      // No readable manifest at this level; keep walking up.
+    }
+    const parent = dirname(directory)
+    if (parent === directory) return undefined
+    directory = parent
+  }
+}
+
+/**
+ * Pi's loader imports every extension through its own module aliases, so a second copy of
+ * `@earendil-works/pi-coding-agent` on disk is not a second runtime: the extension still registers
+ * onto this host's registry and event bus. What cannot be absorbed is a second *version*, whose
+ * API the host does not implement. Key the guard on the version, not on one shared realpath —
+ * a linked checkout (README "point the profile at this checkout") resolves its own same-version
+ * copy and must load, while a profile that hoisted a different Pi version still fails loudly.
  */
 function assertSinglePiInstance(paths: string[], piEntry: string): void {
   const host = realpathSync(piEntry)
@@ -134,9 +160,12 @@ function assertSinglePiInstance(paths: string[], piEntry: string): void {
       continue
     }
     if (resolved === host) continue
+    const version = readPiVersion(resolved)
+    if (version === VERSION) continue
     throw new Error(
-      `Pi instance mismatch: this host loaded ${host}, but ${extension} resolves ${resolved}. ` +
-      'Install one @earendil-works/pi-coding-agent version in the DSH profile.',
+      `Pi instance mismatch: this host loaded ${host} (${VERSION}), but ${extension} resolves ` +
+      `${resolved} (${version ?? 'unknown version'}). ` +
+      `Install one @earendil-works/pi-coding-agent version in the DSH profile.`,
     )
   }
 }
