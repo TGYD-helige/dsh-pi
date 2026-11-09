@@ -57,7 +57,13 @@ pnpm smoke:install     # clean-room install of this version, then list mounted P
 Install the DSH CLI version this release targets, then the bundle at the version this repository ships, plus the Pi extensions you want in the same profile:
 
 ```sh
-npm install --global @deepseek-ai/dsh@0.1.5-rc.2 pnpm@10.28.2
+# `npm install --global` nests @deepseek-ai/dsh-sandbox-local under dsh-base, where
+# dsh 0.1.5-rc.2 profile boot cannot resolve it and exits before the model call. An
+# isolated --prefix install keeps the layout boot resolves: the dsh-* packages stay
+# direct children of dsh. The review and smoke workflows install this same way.
+npm install --prefix "$HOME/.dsh-cli" @deepseek-ai/dsh@0.1.5-rc.2 pnpm@10.28.2
+export PATH="$HOME/.dsh-cli/node_modules/.bin:$PATH"   # add this to your shell profile
+dsh --version
 dsh plugin --profile demo add dsh-pi-host@0.1.0-rc.4 \
   @amaster.ai/pi-image-gen \
   @amaster.ai/pi-video-gen
