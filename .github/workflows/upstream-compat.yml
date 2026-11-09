@@ -47,7 +47,13 @@ jobs:
       # must not go red in that window. The post-promotion check is the flagged command in
       # docs/upstream-compat.md#release-checklist, which is the form that exits 1 on a lagging tag.
       - name: Upstream compatibility report
-        run: pnpm compat:upstream | tee upstream-report.md
+        # `shell: bash` runs `bash -eo pipefail`, and the explicit `set -o pipefail` keeps the pipe
+        # status intact for the tee'd log: without it the step reports tee's exit code and a red
+        # gate stays green.
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm compat:upstream | tee upstream-report.md
       - name: Publish the report
         if: always()
         uses: actions/upload-artifact@v4
@@ -73,7 +79,10 @@ jobs:
       # Packs this checkout, installs the tarball the way the README installs the published
       # version, runs `dsh --profile demo --dump-config`, and lists the mounted Pi tools.
       - name: Clean-room install and tool mount
-        run: pnpm smoke:install 2>&1 | tee clean-install.log
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm smoke:install 2>&1 | tee clean-install.log
       - name: Publish the install log
         if: always()
         uses: actions/upload-artifact@v4
@@ -100,7 +109,10 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Install with the newest upstream Pi
-        run: pnpm smoke:install --pi-version latest 2>&1 | tee upstream-latest.log
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm smoke:install --pi-version latest 2>&1 | tee upstream-latest.log
       - name: Publish the probe log
         if: always()
         uses: actions/upload-artifact@v4
