@@ -1,10 +1,21 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { VERSION } from '@earendil-works/pi-coding-agent'
 import { describe, expect, it, vi } from 'vitest'
 import { PiExtensionRuntime } from '../runtime.js'
 
 const fixture = (name: string) => new URL(`./fixtures/${name}.ts`, import.meta.url).pathname
+
+/** A second, complete Pi install under `root`, like a linked checkout's own node_modules. */
+async function installPiCopy(root: string, version: string): Promise<void> {
+  const directory = join(root, 'node_modules/@earendil-works/pi-coding-agent')
+  await mkdir(directory, { recursive: true })
+  await writeFile(join(directory, 'package.json'), JSON.stringify({
+    name: '@earendil-works/pi-coding-agent', version, main: 'index.js',
+  }))
+  await writeFile(join(directory, 'index.js'), `export const VERSION = ${JSON.stringify(version)}\n`)
+}
 
 describe('PiExtensionRuntime', () => {
   it('loads only explicitly selected extension entries', async () => {
@@ -255,5 +266,37 @@ describe('PiExtensionRuntime', () => {
     expect(reportError).toHaveBeenCalledWith('Pi command "failing" execution failed unexpectedly')
     expect(JSON.stringify(reportError.mock.calls)).not.toContain('secret command response')
     await runtime.shutdown()
+  })
+
+  // A linked checkout (README "point the profile at this checkout") resolves its own Pi copy,
+  // so the guard must key on the version, not on one shared realpath.
+  it('loads an extension that resolves a same-version Pi copy at another realpath', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-pi-linked-'))
+    try {
+      await installPiCopy(cwd, VERSION)
+      const extension = join(cwd, 'extension.js')
+      await writeFile(extension, 'export default function extension() {}\n')
+
+      const runtime = await PiExtensionRuntime.fromPaths([extension], { cwd })
+
+      expect(runtime.tools()).toEqual([])
+      await runtime.shutdown()
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses an extension that resolves a different Pi version', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-pi-mixed-'))
+    try {
+      await installPiCopy(cwd, '0.80.0')
+      const extension = join(cwd, 'extension.js')
+      await writeFile(extension, 'export default function extension() {}\n')
+
+      await expect(PiExtensionRuntime.fromPaths([extension], { cwd }))
+        .rejects.toThrow(/Pi instance mismatch: .*0\.80\.0/)
+    } finally {
+      await rm(cwd, { recursive: true, force: true })
+    }
   })
 })

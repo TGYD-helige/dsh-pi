@@ -1,0 +1,25 @@
+name: Lockfile refresh helper (remove me)
+
+# WHY THIS FILE EXISTS
+#
+# The branch that introduced the Pi 1.x pin could not receive `pnpm-lock.yaml` through the tool
+# used to build it: the GitHub contents write was rejected for a 91 KB file. This workflow
+# generated and committed the lockfile inside CI instead, which is why the branch has a
+# `chore: refresh pnpm-lock.yaml` commit.
+#
+# REMOVE THIS FILE
+#
+# It has done its job. Delete it before or after merging; nothing depends on it. It is kept
+# dispatch-only and read-only precisely so it cannot run on its own in the meantime.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  nothing:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This helper is obsolete; delete .github/workflows/lockfile-refresh.yml."

@@ -402,6 +402,18 @@ describe('dsh-pi plugin', () => {
     await harness.cleanup()
   })
 
+  it('passes the claimed DSH prompt to Pi before_agent_start handlers as a user trigger', async () => {
+    const state = globalThis as { __piBeforeAgentStart?: unknown[] }
+    state.__piBeforeAgentStart = []
+    const harness = createHarness(fixture('before-agent-start'))
+
+    await harness.enterStep()
+
+    expect(state.__piBeforeAgentStart).toEqual([{ messageType: 'user', prompt: 'hello' }])
+    delete state.__piBeforeAgentStart
+    await harness.cleanup()
+  })
+
   it('pairs the final Pi turn and agent end on a DSH error boundary', async () => {
     const events: string[] = []
     ;(globalThis as { __piLifecycleEvents?: string[] }).__piLifecycleEvents = events

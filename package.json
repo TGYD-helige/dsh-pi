@@ -1,6 +1,6 @@
 {
   "name": "dsh-pi-host",
-  "version": "0.1.0-rc.3",
+  "version": "0.1.0-rc.4",
   "description": "Run Pi extensions as agent-scoped DeepSeek Harness plugins",
   "keywords": [
     "deepseek-harness",
@@ -56,7 +56,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "pnpm test && pnpm typecheck && pnpm build",
     "compat": "tsx scripts/compat.ts",
-    "prepare": "pnpm build"
+    "prepare": "pnpm build",
+    "compat:upstream": "tsx scripts/upstream-compat.ts",
+    "smoke:install": "bash scripts/clean-install-smoke.sh"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.2",
@@ -70,7 +72,7 @@
   "dependencies": {
     "@deepseek-ai/dsh-llm": "0.1.5-rc.2",
     "@deepseek-ai/schemastery": "^3.18.2",
-    "@earendil-works/pi-coding-agent": "0.80.10",
+    "@earendil-works/pi-coding-agent": "1.5.0",
     "typebox": "1.1.38"
   },
   "devDependencies": {

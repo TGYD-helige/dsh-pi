@@ -1,0 +1,122 @@
+name: Upstream compatibility
+
+# Detects a Pi or DSH release that breaks this host, instead of leaving it to whoever installs
+# first. `pnpm compat:upstream` covers registry and declaration drift; the install jobs reproduce
+# the README install path in a clean room and prove a real Pi extension still mounts.
+
+on:
+  schedule:
+    # Daily. GitHub only evaluates schedule triggers on the default branch, so this starts after
+    # the workflow is merged; until then use workflow_dispatch.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [upstream-release]
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'src/support.ts'
+      - 'scripts/upstream-compat.ts'
+      - 'scripts/clean-install-smoke.sh'
+      - '.github/workflows/upstream-compat.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  declaration:
+    name: Declaration and registry drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # support.test.ts fails when package.json, README, or docs/compatibility.md drift from
+      # src/support.ts, including the pinned install command.
+      - run: pnpm check
+      # No --fail-on-release-drift here on purpose: after a version bump the repository is ahead
+      # of the registry until the release checklist promotes the dist-tag, and this daily gate
+      # must not go red in that window. The post-promotion check is the flagged command in
+      # docs/upstream-compat.md#release-checklist, which is the form that exits 1 on a lagging tag.
+      - name: Upstream compatibility report
+        # `shell: bash` runs `bash -eo pipefail`, and the explicit `set -o pipefail` keeps the pipe
+        # status intact for the tee'd log: without it the step reports tee's exit code and a red
+        # gate stays green.
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm compat:upstream | tee upstream-report.md
+      - name: Publish the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-report
+          path: upstream-report.md
+          if-no-files-found: ignore
+
+  pinned-install:
+    name: Clean install of the pinned versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Packs this checkout, installs the tarball the way the README installs the published
+      # version, runs `dsh --profile demo --dump-config`, and lists the mounted Pi tools.
+      - name: Clean-room install and tool mount
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm smoke:install 2>&1 | tee clean-install.log
+      - name: Publish the install log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clean-install-log
+          path: clean-install.log
+          if-no-files-found: ignore
+
+  upstream-latest:
+    name: Probe newest upstream Pi
+    # This is the early-warning job: it fails while the pin is still current, so the breakage is
+    # recorded before anyone bumps the pin or a user installs it.
+    needs: pinned-install
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.28.2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install with the newest upstream Pi
+        shell: bash
+        run: |
+          set -o pipefail
+          pnpm smoke:install --pi-version latest 2>&1 | tee upstream-latest.log
+      - name: Publish the probe log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-latest-log
+          path: upstream-latest.log
+          if-no-files-found: ignore

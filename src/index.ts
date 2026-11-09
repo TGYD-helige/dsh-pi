@@ -154,8 +154,13 @@ async function endPiTurn(
   const usedExisting = assistants.length > open.assistantCount
   const last = usedExisting ? assistants.at(-1)! : syntheticPiAssistant(reason)
   const message = reason === undefined ? last : { ...(last as object), stopReason: piStopReason(reason) }
+  // Pi 1.x models a turn boundary as a state draft. DSH owns the durable session, so this host
+  // reports the boundary without offering entries for Pi to append: no handler veto is honoured.
   await mounted.runtime.emit({
     type: 'turn_end', turnIndex: open.piTurnIndex, message, toolResults: [],
+    entries: [], continue: false, context: { valid: true, messages: [] },
+    outcome: piStopReason(reason) === 'aborted' ? 'aborted' : piStopReason(reason) === 'error' ? 'error' : 'completed',
+    messageEntryId: '', toolResultEntryIds: [],
   } as unknown as ExtensionEvent, signal)
   return { message, usedExisting }
 }
@@ -495,10 +500,14 @@ export function apply(ctx: Context, config: Config): void {
         if (!inserted) entered.unshift(transformed)
       }
       await mounted.runtime.emit({
-        type: 'before_agent_start', prompt, systemPrompt: '',
+        type: 'before_agent_start', messageType: 'user', prompt, systemPrompt: '',
         ...(images.length === 0 ? {} : { images }),
-        systemPromptOptions: { cwd: agent.session.header.cwd ?? process.cwd() },
-      }, signal)
+        // Pi 1.x dispatches this event on `messageType`: only a `'user'` trigger forwards
+        // `prompt` and `images` to handlers (see docs/compatibility.md). Pi also renders the
+        // event's system prompt from these options; an empty forced prompt keeps DSH's own
+        // system prompt authoritative for the embedded Pi session.
+        systemPromptOptions: { cwd: agent.session.header.cwd ?? process.cwd(), forceSystemPrompt: '' },
+      } as unknown as ExtensionEvent, signal)
       mounted.lastTurn = turn
       await mounted.runtime.emit({ type: 'agent_start' }, signal)
       await mounted.drainDeliveries()
@@ -541,7 +550,9 @@ export function apply(ctx: Context, config: Config): void {
       await mounted.drainDeliveries()
       if (!hasPendingMessages(entry.agent)) {
         try {
-          await mounted.runtime.emit({ type: 'agent_settled' })
+          await mounted.runtime.emit({
+            type: 'agent_settled', aborted: piStopReason(event.data.reason) === 'aborted',
+          } as unknown as ExtensionEvent)
         } catch {
           failed = true
         }
